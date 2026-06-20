@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏎️ Гонки</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 460px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #ffb74d; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ffb74d; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🏎️ Гонки</h2>
+        <div class="stats"><span>🏆 <b id="score">0</b></span><span>👑 <b id="high">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="400" height="600"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🏎️ Гонки</h2>
+            <p style="color:#888;margin:4px 0;">⬅➡</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>⬅</kbd><kbd>➡</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const W = 400, H = 600;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+const player = {x: 175, y: 520, w: 50, h: 70, speed: 8};
+let enemies = [];
+let score = 0, high = Records.get('racer') || 0;
+let gameRunning = false, gameOver = false;
+let animId = null, lastTime = 0, roadOffset = 0;
+let keys = {};
+
+document.getElementById('high').textContent = high;
+
+const CAR_COLORS = ['#ef5350','#4fc3f7','#ffd93d','#81c784','#ce93d8','#ffb74d'];
+
+function addEnemy() {
+    const w = 35 + Math.random()*25;
+    const h = 45 + Math.random()*25;
+    enemies.push({
+        x: Math.random()*(W-w-10)+5,
+        y: -h,
+        w, h,
+        speed: 2 + Math.random()*2.5 + score/300,
+        color: CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)]
+    });
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Дорога
+    roadOffset = (roadOffset + 4) % 50;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([25, 25]);
+    ctx.lineDashOffset = -roadOffset;
+    ctx.beginPath();
+    ctx.moveTo(W/2, 0);
+    ctx.lineTo(W/2, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Враги
+    enemies.forEach(e => {
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = e.color;
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(e.x+4, e.y+4, e.w-8, e.h*0.25);
+        ctx.fillRect(e.x+4, e.y+e.h*0.5, e.w-8, e.h*0.2);
+    });
+    
+    // Игрок
+    ctx.shadowColor = '#4ecdc4';
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(player.x+6, player.y+8, player.w-12, player.h*0.28);
+    ctx.fillRect(player.x+6, player.y+player.h*0.5, player.w-12, player.h*0.22);
+    
+    // Счёт
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
+    ctx.fillText(score, 12, 12);
+    ctx.shadowBlur = 0;
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, H/2-50, W, 100);
+        ctx.fillStyle = '#ef5350';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💀 Врезался!', W/2, H/2+6);
+        ctx.fillStyle = '#888';
+        ctx.font = '16px Arial';
+        ctx.fillText(`Счёт: ${score}`, W/2, H/2+44);
+    }
+}
+
+// ===== ОБНОВЛЕНИЕ =====
+function update(dt) {
+    if (!gameRunning || gameOver) return;
+    
+    score++;
+    document.getElementById('score').textContent = score;
+    
+    if (enemies.length < 5 && Math.random() < 0.02 * (1 + score/200)) addEnemy();
+    
+    // Движение врагов
+    for (let i=enemies.length-1; i>=0; i--) {
+        const e = enemies[i];
+        e.y += e.speed * dt;
+        if (e.y > H+20) { enemies.splice(i, 1); continue; }
+        if (e.x < player.x + player.w - 4 && e.x + e.w > player.x + 4 &&
+            e.y < player.y + player.h - 4 && e.y + e.h > player.y + 4) {
+            gameOver = true; gameRunning = false;
+            Sound.play('lose');
+            if (score > high) {
+                high = score;
+                Records.set('racer', high);
+                document.getElementById('high').textContent = high;
+            }
+            render();
+            return;
+        }
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function movePlayer() {
+    if (!gameRunning || gameOver) { requestAnimationFrame(movePlayer); return; }
+    if (keys['ArrowLeft']) player.x = Math.max(0, player.x - player.speed);
+    if (keys['ArrowRight']) player.x = Math.min(W - player.w, player.x + player.speed);
+    requestAnimationFrame(movePlayer);
+}
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop(timestamp) {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min(timestamp - lastTime, 33) / 16.67;
+    lastTime = timestamp;
+    
+    update(dt);
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    enemies = [];
+    score = 0;
+    gameOver = false;
+    gameRunning = true;
+    player.x = W/2 - player.w/2;
+    document.getElementById('score').textContent = '0';
+    lastTime = 0;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+showOverlay('🏎️ Гонки', 'Нажми "Начать"');
+movePlayer();
+</script>
+</body>
+</html>
