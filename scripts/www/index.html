@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎮 Игровой Портал Premium</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ===== ДОПОЛНИТЕЛЬНЫЕ СТИЛИ ДЛЯ ГЛАВНОГО МЕНЮ ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            background: #0a0a1a;
+            color: #fff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ===== ЧАСТИЦЫ ФОНА ===== */
+        #particles-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(78, 205, 196, 0.4), transparent);
+            animation: floatParticle linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes floatParticle {
+            0% { transform: translateY(100vh) scale(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
+        }
+
+        /* ===== ОСНОВНОЙ КОНТЕЙНЕР ===== */
+        .main-menu {
+            position: relative;
+            z-index: 1;
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 20px 20px 40px;
+        }
+
+        /* ===== ХЕДЕР ===== */
+        .header {
+            text-align: center;
+            padding: 30px 20px 25px;
+            position: relative;
+        }
+
+        .logo-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        .logo-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 350px;
+            height: 350px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(78, 205, 196, 0.15), rgba(240, 147, 251, 0.1), transparent 70%);
+            border-radius: 50%;
+            filter: blur(60px);
+            animation: pulseGlow 4s ease-in-out infinite;
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.3); opacity: 0.8; }
+        }
+
+        .header h1 {
+            font-size: 52px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            position: relative;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #667eea 100%);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 6s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            color: #8888bb;
+            font-size: 18px;
+            letter-spacing: 5px;
+            margin-top: 8px;
+            position: relative;
+            font-weight: 300;
+        }
+
+        .subtitle span {
+            color: #4ecdc4;
+            -webkit-text-fill-color: #4ecdc4;
+        }
+
+        /* ===== СТАТИСТИКА ===== */
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #6666aa;
+            flex-wrap: wrap;
+        }
+
+        .stats-bar b {
+            color: #4ecdc4;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .stats-bar .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.03);
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        /* ===== СЕТКА ИГР ===== */
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 22px;
+            margin: 35px 0 45px;
+        }
+
+        .game-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 28px 16px 22px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+            border-radius: 18px;
+            text-decoration: none;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            overflow: hidden;
+            min-height: 180px;
+            backdrop-filter: blur(10px);
+            cursor: pointer;
+        }
+
+        .game-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 18px;
+            padding: 1px;
+            background: linear-gradient(135deg, var(--color), transparent 60%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0.2;
+            transition: 0.4s;
+        }
+
+        .game-card:hover::before {
+            opacity: 1;
+        }
+
+        .game-card .card-glow {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at center, var(--color), transparent 60%);
+            opacity: 0;
+            transition: 0.5s;
+            pointer-events: none;
+        }
+
+        .game-card:hover .card-glow {
+            opacity: 0.12;
+        }
+
+        .game-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            border-color: var(--color);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 40px var(--glow-color, rgba(78,205,196,0.15));
+        }
+
+        .card-icon {
+            font-size: 44px;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
+            animation: iconFloat 3s ease-in-out infinite;
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+        }
+
+        .game-card:nth-child(2n) .card-icon { animation-delay: 0.4s; }
+        .game-card:nth-child(3n) .card-icon { animation-delay: 0.8s; }
+        .game-card:nth-child(5n) .card-icon { animation-delay: 1.2s; }
+
+        @keyframes iconFloat {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-6px) scale(1.05); }
+        }
+
+        .card-content {
+            text-align: center;
+            position: relative;
+            z-index: 1;
+            width: 100%;
+        }
+
+        .card-content h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 3px;
+            letter-spacing: 0.5px;
+        }
+
+        .card-content p {
+            font-size: 12px;
+            color: #8888bb;
+            margin-bottom: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 12px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 20px;
+            font-size: 10px;
+            color: #8888bb;
+            border: 1px solid rgba(255,255,255,0.04);
+            letter-spacing: 0.3px;
+        }
+
+        .badge.new {
+            background: rgba(78, 205, 196, 0.15);
+            color: #4ecdc4;
+            border-color: rgba(78, 205, 196, 0.2);
+            animation: blinkBadge 2s ease-in-out infinite;
+        }
+
+        @keyframes blinkBadge {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Платформа (количество игр) */
+        .game-count {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            font-size: 10px;
+            color: rgba(255,255,255,0.08);
+            letter-spacing: 1px;
+            z-index: 1;
+        }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            text-align: center;
+            padding: 25px 0 10px;
+            border-top: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .footer-stats {
+            display: flex;
+            justify-content: center;
+            gap: 35px;
+            color: #555588;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+
+        .footer-stats span {
+            opacity: 0.5;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .footer-stats span:hover {
+            opacity: 1;
+            color: #aaaadd;
+        }
+
+        .footer-stats .dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #4ecdc4;
+            animation: pulseDot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulseDot {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* ===== АДАПТИВ ===== */
+        @media (max-width: 900px) {
+            .header h1 { font-size: 38px; }
+            .game-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
+            .game-card { min-height: 150px; padding: 20px 12px 16px; }
+            .card-icon { font-size: 34px; }
+        }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 28px; letter-spacing: 1px; }
+            .subtitle { font-size: 14px; letter-spacing: 2px; }
+            .stats-bar { gap: 12px; font-size: 12px; }
+            .stats-bar .stat-item { padding: 4px 12px; }
+            .stats-bar b { font-size: 15px; }
+            .game-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 12px;
+                margin: 20px 0 30px;
+            }
+            .game-card {
+                min-height: 120px;
+                padding: 16px 10px 12px;
+                border-radius: 14px;
+            }
+            .card-icon { font-size: 28px; margin-bottom: 6px; }
+            .card-content h3 { font-size: 15px; }
+            .card-content p { font-size: 11px; }
+            .badge { font-size: 9px; padding: 1px 10px; }
+            .game-count { display: none; }
+            .footer-stats { gap: 16px; font-size: 11px; flex-direction: column; }
+            .logo-glow { width: 200px; height: 200px; }
+        }
+
+        @media (max-width: 400px) {
+            .game-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+            .game-card { min-height: 100px; padding: 12px 8px 10px; }
+            .card-icon { font-size: 22px; }
+            .card-content h3 { font-size: 13px; }
+            .header h1 { font-size: 22px; }
+        }
+
+        /* ===== СКРОЛЛБАР ===== */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a1a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #4ecdc4, #f093fb);
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4ecdc4;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== ФОН С ЧАСТИЦАМИ ===== -->
+    <div id="particles-bg"></div>
+
+    <!-- ===== ГЛАВНОЕ МЕНЮ ===== -->
+    <div class="main-menu">
+
+        <!-- ХЕДЕР -->
+        <div class="header">
+            <div class="logo-wrapper">
+                <div class="logo-glow"></div>
+                <h1>🎮 ИГРОВОЙ ПОРТАЛ</h1>
+            </div>
+            <p class="subtitle">
+                10 премиум-игр · <span>оптимизировано</span> · 60 FPS
+            </p>
+            <div class="stats-bar">
+                <span class="stat-item">👥 Онлайн: <b id="online">1 284</b></span>
+                <span class="stat-item">🏆 Рекордов: <b id="records">0</b></span>
+                <span class="stat-item">⚡ Все игры <b style="color:#4ecdc4;font-size:14px;">бесплатны</b></span>
+            </div>
+        </div>
+
+        <!-- СЕТКА ИГР -->
+        <div class="game-grid">
+
+            <!-- 1. Змейка -->
+            <a href="games/snake.html" class="game-card" style="--color:#4ecdc4; --glow-color:rgba(78,205,196,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🐍</div>
+                <div class="card-content">
+                    <h3>Змейка</h3>
+                    <p>Классическая аркада</p>
+                    <span class="badge">🎯 5 мин</span>
+                </div>
+                <span class="game-count">#1</span>
+            </a>
+
+            <!-- 2. Арканоид -->
+            <a href="games/arkanoid.html" class="game-card" style="--color:#ff6b6b; --glow-color:rgba(255,107,107,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🧱</div>
+                <div class="card-content">
+                    <h3>Арканоид</h3>
+                    <p>Разрушай блоки</p>
+                    <span class="badge">🎯 10 мин</span>
+                </div>
+                <span class="game-count">#2</span>
+            </a>
+
+            <!-- 3. Тетрис -->
+            <a href="games/tetris.html" class="game-card" style="--color:#ffd93d; --glow-color:rgba(255,217,61,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🧩</div>
+                <div class="card-content">
+                    <h3>Тетрис</h3>
+                    <p>Собирай линии</p>
+                    <span class="badge">🎯 15 мин</span>
+                </div>
+                <span class="game-count">#3</span>
+            </a>
+
+            <!-- 4. Flappy Bird -->
+            <a href="games/flappy.html" class="game-card" style="--color:#4fc3f7; --glow-color:rgba(79,195,247,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🐦</div>
+                <div class="card-content">
+                    <h3>Flappy Bird</h3>
+                    <p>Пролети трубы</p>
+                    <span class="badge new">🔥 Новое</span>
+                </div>
+                <span class="game-count">#4</span>
+            </a>
+
+            <!-- 5. Сапёр -->
+            <a href="games/minesweeper.html" class="game-card" style="--color:#ce93d8; --glow-color:rgba(206,147,216,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">💣</div>
+                <div class="card-content">
+                    <h3>Сапёр</h3>
+                    <p>Найди мины</p>
+                    <span class="badge">🎯 8 мин</span>
+                </div>
+                <span class="game-count">#5</span>
+            </a>
+
+            <!-- 6. 2048 -->
+            <a href="games/2048.html" class="game-card" style="--color:#fff176; --glow-color:rgba(255,241,118,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🔢</div>
+                <div class="card-content">
+                    <h3>2048</h3>
+                    <p>Сложи плитки</p>
+                    <span class="badge">🎯 12 мин</span>
+                </div>
+                <span class="game-count">#6</span>
+            </a>
+
+            <!-- 7. Память -->
+            <a href="games/memory.html" class="game-card" style="--color:#81c784; --glow-color:rgba(129,199,132,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🧠</div>
+                <div class="card-content">
+                    <h3>Память</h3>
+                    <p>Найди пары</p>
+                    <span class="badge">🎯 4 мин</span>
+                </div>
+                <span class="game-count">#7</span>
+            </a>
+
+            <!-- 8. Гонки -->
+            <a href="games/racer.html" class="game-card" style="--color:#ffb74d; --glow-color:rgba(255,183,77,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🏎️</div>
+                <div class="card-content">
+                    <h3>Гонки</h3>
+                    <p>Обгоняй машины</p>
+                    <span class="badge">🎯 7 мин</span>
+                </div>
+                <span class="game-count">#8</span>
+            </a>
+
+            <!-- 9. Тир -->
+            <a href="games/shooter.html" class="game-card" style="--color:#ef5350; --glow-color:rgba(239,83,80,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🎯</div>
+                <div class="card-content">
+                    <h3>Тир</h3>
+                    <p>Стреляй по целям</p>
+                    <span class="badge new">🔥 Новое</span>
+                </div>
+                <span class="game-count">#9</span>
+            </a>
+
+            <!-- 10. Pong -->
+            <a href="games/pong.html" class="game-card" style="--color:#64b5f6; --glow-color:rgba(100,181,246,0.25);">
+                <div class="card-glow"></div>
+                <div class="card-icon">🏓</div>
+                <div class="card-content">
+                    <h3>Pong</h3>
+                    <p>Теннис с ИИ</p>
+                    <span class="badge">🎯 8 мин</span>
+                </div>
+                <span class="game-count">#10</span>
+            </a>
+
+        </div>
+
+        <!-- FOOTER -->
+        <div class="footer">
+            <div class="footer-stats">
+                <span>⭐ Все игры бесплатны</span>
+                <span>💾 Рекорды сохраняются</span>
+                <span>🔄 Обновлено: 2026</span>
+                <span><span class="dot"></span> Сервер работает</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ===== СКРИПТЫ ===== -->
+    <script>
+        // ===== ФОН С ЧАСТИЦАМИ =====
+        (function createParticles() {
+            const container = document.getElementById('particles-bg');
+            if (!container) return;
+
+            const colors = ['#4ecdc4', '#f093fb', '#667eea', '#ff6b6b', '#ffd93d', '#4fc3f7'];
+
+            for (let i = 0; i < 45; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                const size = 2 + Math.random() * 5;
+                const duration = 18 + Math.random() * 22;
+                const delay = Math.random() * 30;
+                const color = colors[Math.floor(Math.random() * colors.length)];
+
+                particle.style.cssText = `
+                    width: ${size}px;
+                    height: ${size}px;
+                    left: ${Math.random() * 100}%;
+                    animation-duration: ${duration}s;
+                    animation-delay: ${delay}s;
+                    background: radial-gradient(circle, ${color}, transparent);
+                    opacity: ${0.08 + Math.random() * 0.25};
+                `;
+                container.appendChild(particle);
+            }
+        })();
+
+        // ===== СТАТИСТИКА =====
+        (function updateStats() {
+            // Считаем рекорды в localStorage
+            let recordCount = 0;
+            try {
+                for (let key in localStorage) {
+                    if (key.startsWith('record_')) recordCount++;
+                }
+            } catch(e) {}
+
+            const recordEl = document.getElementById('records');
+            if (recordEl) recordEl.textContent = recordCount || '0';
+
+            // Онлайн (рандом для атмосферы)
+            const onlineEl = document.getElementById('online');
+            if (onlineEl) {
+                const base = 1200;
+                const variation = Math.floor(Math.random() * 400);
+                onlineEl.textContent = (base + variation).toLocaleString();
+            }
+
+            // Обновляем каждые 30 секунд
+            setInterval(() => {
+                const onlineEl2 = document.getElementById('online');
+                if (onlineEl2) {
+                    const base = 1200;
+                    const variation = Math.floor(Math.random() * 400);
+                    onlineEl2.textContent = (base + variation).toLocaleString();
+                }
+            }, 30000);
+        })();
+
+        // ===== АНИМАЦИЯ ПОЯВЛЕНИЯ КАРТОЧЕК (Intersection Observer) =====
+        (function animateCards() {
+            const cards = document.querySelectorAll('.game-card');
+            if ('IntersectionObserver' in window) {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.style.opacity = '1';
+                            entry.target.style.transform = 'translateY(0)';
+                        }
+                    });
+                }, { threshold: 0.1 });
+
+                cards.forEach((card, i) => {
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateY(30px)';
+                    card.style.transition = `all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${i * 0.05}s`;
+                    observer.observe(card);
+                });
+            } else {
+                // Fallback для старых браузеров
+                cards.forEach(card => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                });
+            }
+        })();
+
+        // ===== КЛИК ПО КАРТОЧКЕ (звук) =====
+        document.querySelectorAll('.game-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                // Простой звуковой эффект через Web Audio
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+                    osc.start(audioCtx.currentTime);
+                    osc.stop(audioCtx.currentTime + 0.08);
+                } catch(e) {}
+            });
+        });
+    </script>
+
+</body>
+</html>
