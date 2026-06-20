@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧩 Тетрис</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 500px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #ffd93d; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ffd93d; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+        .game-container { display: flex; gap: 16px; align-items: flex-start; }
+        .next-box { background: #0a0a1a; border-radius: 12px; padding: 12px; text-align: center; min-width: 100px; }
+        .next-box span { color: #888; font-size: 12px; display: block; margin-bottom: 8px; }
+        .next-box canvas { width: 80px; height: 80px; }
+        @media (max-width: 600px) { .game-container { flex-direction: column; align-items: center; } }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🧩 Тетрис</h2>
+        <div class="stats"><span>🏆 <b id="score">0</b></span><span>📊 <b id="lines">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <div class="game-container">
+            <div style="position:relative;">
+                <canvas id="game" width="300" height="600"></canvas>
+                <div class="game-overlay" id="overlay">
+                    <h2>🧩 Тетрис</h2>
+                    <p style="color:#888;margin:4px 0;">⬆ поворот ⬇ ускорить ⬅➡</p>
+                    <button class="btn" id="startBtn">▶ Начать</button>
+                </div>
+            </div>
+            <div class="next-box">
+                <span>Следующая</span>
+                <canvas id="next" width="80" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>⬆</kbd><kbd>⬇</kbd><kbd>⬅</kbd><kbd>➡</kbd><kbd>␣</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const COLS = 10, ROWS = 20, B = 30;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const nextCanvas = document.getElementById('next');
+const nextCtx = nextCanvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+// ===== ФИГУРЫ =====
+const SHAPES = [
+    {m: [[1,1,1,1]], c: '#4fc3f7'},
+    {m: [[1,1],[1,1]], c: '#fff176'},
+    {m: [[0,1,0],[1,1,1]], c: '#ce93d8'},
+    {m: [[0,1,1],[1,1,0]], c: '#81c784'},
+    {m: [[1,1,0],[0,1,1]], c: '#ef5350'},
+    {m: [[1,0,0],[1,1,1]], c: '#ffb74d'},
+    {m: [[0,0,1],[1,1,1]], c: '#64b5f6'}
+];
+
+let board = [];
+let current = null, next = null;
+let score = 0, lines = 0;
+let gameRunning = false, gameOver = false;
+let dropCounter = 0;
+
+// ===== СКОРОСТЬ ПАДЕНИЯ (МЕНЯЙ ТОЛЬКО ЗДЕСЬ) =====
+// 500  = быстро    (0.5 сек)
+// 800  = средне    (0.8 сек)  
+// 1000 = классика  (1 сек)
+// 1500 = медленно  (1.5 сек)
+// 2000 = очень медленно (2 сек)
+// 3000 = супер-медленно (3 сек)
+const DROP_INTERVAL = 20000; // <- МЕНЯЙ ЭТО ЧИСЛО
+
+let animId = null, lastTime = 0;
+
+// DOM
+document.getElementById('score').textContent = '0';
+document.getElementById('lines').textContent = '0';
+
+// ===== ДОСКА =====
+function createBoard() {
+    board = [];
+    for (let r=0; r<ROWS; r++) board.push(new Array(COLS).fill(0));
+}
+
+function randomPiece() {
+    const s = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    return {m: s.m.map(r=>[...r]), c: s.c, x: Math.floor((COLS - s.m[0].length)/2), y: 0};
+}
+
+function isValid(m, ox, oy) {
+    for (let r=0; r<m.length; r++) {
+        for (let c=0; c<m[0].length; c++) {
+            if (m[r][c]) {
+                const x = ox + c, y = oy + r;
+                if (x < 0 || x >= COLS || y >= ROWS || y < 0) return false;
+                if (y >= 0 && board[y][x]) return false;
+            }
+        }
+    }
+    return true;
+}
+
+function lockPiece() {
+    if (!current) return;
+    for (let r=0; r<current.m.length; r++) {
+        for (let c=0; c<current.m[0].length; c++) {
+            if (current.m[r][c]) {
+                const x = current.x + c, y = current.y + r;
+                if (y < 0) { gameOver = true; gameRunning = false; Sound.play('lose'); return; }
+                board[y][x] = current.c;
+            }
+        }
+    }
+    clearLines();
+    current = next;
+    next = randomPiece();
+    drawNext();
+    if (!isValid(current.m, current.x, current.y)) {
+        gameOver = true;
+        gameRunning = false;
+        Sound.play('lose');
+    }
+}
+
+function clearLines() {
+    let cleared = 0;
+    for (let r=ROWS-1; r>=0; r--) {
+        if (board[r].every(cell => cell !== 0)) {
+            board.splice(r, 1);
+            board.unshift(new Array(COLS).fill(0));
+            cleared++;
+            r++;
+        }
+    }
+    if (cleared > 0) {
+        const pts = [0, 100, 300, 600, 1000];
+        score += pts[cleared] || 0;
+        lines += cleared;
+        document.getElementById('score').textContent = score;
+        document.getElementById('lines').textContent = lines;
+        Sound.play('win');
+        // ⚠️ СКОРОСТЬ НЕ МЕНЯЕТСЯ! ВСЕГДА DROP_INTERVAL
+    }
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    for (let r=0; r<ROWS; r++) {
+        for (let c=0; c<COLS; c++) {
+            if (board[r][c]) {
+                ctx.shadowColor = board[r][c];
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = board[r][c];
+                ctx.fillRect(c*B+1, r*B+1, B-2, B-2);
+                ctx.shadowBlur = 0;
+            }
+        }
+    }
+    
+    if (current && !gameOver) {
+        for (let r=0; r<current.m.length; r++) {
+            for (let c=0; c<current.m[0].length; c++) {
+                if (current.m[r][c]) {
+                    const x = (current.x + c) * B, y = (current.y + r) * B;
+                    ctx.shadowColor = current.c;
+                    ctx.shadowBlur = 12;
+                    ctx.fillStyle = current.c;
+                    ctx.fillRect(x+1, y+1, B-2, B-2);
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+    }
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, ROWS/2*B-40, canvas.width, 80);
+        ctx.fillStyle = '#ef5350';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💀 Конец', canvas.width/2, ROWS/2*B+6);
+    }
+}
+
+function drawNext() {
+    nextCtx.fillStyle = 'rgba(0,0,0,0.3)';
+    nextCtx.fillRect(0, 0, 80, 80);
+    if (!next) return;
+    const bs = 20;
+    const ox = (80 - next.m[0].length * bs) / 2;
+    const oy = (80 - next.m.length * bs) / 2;
+    for (let r=0; r<next.m.length; r++) {
+        for (let c=0; c<next.m[0].length; c++) {
+            if (next.m[r][c]) {
+                nextCtx.fillStyle = next.c;
+                nextCtx.shadowColor = next.c;
+                nextCtx.shadowBlur = 8;
+                nextCtx.fillRect(ox + c*bs+1, oy + r*bs+1, bs-2, bs-2);
+                nextCtx.shadowBlur = 0;
+            }
+        }
+    }
+}
+
+// ===== ОБНОВЛЕНИЕ (СКОРОСТЬ ВСЕГДА ПОСТОЯННАЯ) =====
+function update(dt) {
+    if (!gameRunning || gameOver) return;
+    dropCounter += dt * 1000;
+    if (dropCounter >= DROP_INTERVAL) {  // <- ВСЕГДА ОДИНАКОВО
+        dropCounter = 0;
+        if (isValid(current.m, current.x, current.y + 1)) {
+            current.y++;
+        } else {
+            lockPiece();
+            if (gameOver) return;
+        }
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+document.addEventListener('keydown', e => {
+    if (!gameRunning || gameOver) return;
+    const k = e.key;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Space'].includes(k)) e.preventDefault();
+    if (k === 'ArrowLeft' && isValid(current.m, current.x-1, current.y)) { current.x--; Sound.play('move'); }
+    if (k === 'ArrowRight' && isValid(current.m, current.x+1, current.y)) { current.x++; Sound.play('move'); }
+    if (k === 'ArrowDown' && isValid(current.m, current.x, current.y+1)) { current.y++; dropCounter = 0; Sound.play('move'); }
+    if (k === 'ArrowUp') {
+        const r = current.m[0].map((_, i) => current.m.map(row => row[i]).reverse());
+        if (isValid(r, current.x, current.y)) { current.m = r; Sound.play('click'); }
+    }
+    if (k === ' ' || k === 'Space') {
+        while (isValid(current.m, current.x, current.y+1)) current.y++;
+        lockPiece();
+        Sound.play('click');
+    }
+});
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop(timestamp) {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min(timestamp - lastTime, 33) / 16.67;
+    lastTime = timestamp;
+    
+    update(dt);
+    render();
+    drawNext();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    createBoard();
+    score = 0; lines = 0;
+    gameOver = false;
+    gameRunning = true;
+    dropCounter = 0;
+    document.getElementById('score').textContent = '0';
+    document.getElementById('lines').textContent = '0';
+    current = randomPiece();
+    next = randomPiece();
+    drawNext();
+    lastTime = 0;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+createBoard();
+current = randomPiece();
+next = randomPiece();
+drawNext();
+showOverlay('🧩 Тетрис', 'Нажми "Начать"');
+</script>
+</body>
+</html>
