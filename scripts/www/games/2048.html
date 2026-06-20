@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔢 2048</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 460px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #fff176; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #fff176; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🔢 2048</h2>
+        <div class="stats"><span>🏆 <b id="score">0</b></span><span>👑 <b id="high">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="400" height="400"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🔢 2048</h2>
+            <p style="color:#888;margin:4px 0;">⬆⬇⬅➡</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>⬆</kbd><kbd>⬇</kbd><kbd>⬅</kbd><kbd>➡</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const S = 4, CELL = 100;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let grid = [];
+let score = 0, high = Records.get('2048') || 0;
+let gameRunning = false, gameOver = false;
+let animId = null;
+
+document.getElementById('high').textContent = high;
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+function initGrid() {
+    grid = [];
+    for (let r=0; r<S; r++) grid[r] = new Array(S).fill(0);
+    addRandom(); addRandom();
+}
+
+function addRandom() {
+    const free = [];
+    for (let r=0; r<S; r++) for (let c=0; c<S; c++) {
+        if (grid[r][c] === 0) free.push({r, c});
+    }
+    if (free.length === 0) return;
+    const cell = free[Math.floor(Math.random() * free.length)];
+    grid[cell.r][cell.c] = Math.random() < 0.9 ? 2 : 4;
+}
+
+function slide(row) {
+    let arr = row.filter(v => v !== 0);
+    let merged = [];
+    let i = 0;
+    while (i < arr.length) {
+        if (i+1 < arr.length && arr[i] === arr[i+1]) {
+            merged.push(arr[i] * 2);
+            score += arr[i] * 2;
+            i += 2;
+        } else {
+            merged.push(arr[i]);
+            i++;
+        }
+    }
+    while (merged.length < S) merged.push(0);
+    return merged;
+}
+
+function move(dr, dc) {
+    if (!gameRunning || gameOver) return;
+    let moved = false;
+    
+    if (dc === 1) {
+        for (let r=0; r<S; r++) {
+            const row = [];
+            for (let c=S-1; c>=0; c--) row.push(grid[r][c]);
+            const res = slide(row);
+            for (let c=0; c<S; c++) {
+                const val = res[S-1-c];
+                if (grid[r][c] !== val) moved = true;
+                grid[r][c] = val;
+            }
+        }
+    } else if (dc === -1) {
+        for (let r=0; r<S; r++) {
+            const row = [];
+            for (let c=0; c<S; c++) row.push(grid[r][c]);
+            const res = slide(row);
+            for (let c=0; c<S; c++) {
+                if (grid[r][c] !== res[c]) moved = true;
+                grid[r][c] = res[c];
+            }
+        }
+    } else if (dr === 1) {
+        for (let c=0; c<S; c++) {
+            const row = [];
+            for (let r=S-1; r>=0; r--) row.push(grid[r][c]);
+            const res = slide(row);
+            for (let r=0; r<S; r++) {
+                const val = res[S-1-r];
+                if (grid[r][c] !== val) moved = true;
+                grid[r][c] = val;
+            }
+        }
+    } else if (dr === -1) {
+        for (let c=0; c<S; c++) {
+            const row = [];
+            for (let r=0; r<S; r++) row.push(grid[r][c]);
+            const res = slide(row);
+            for (let r=0; r<S; r++) {
+                if (grid[r][c] !== res[r]) moved = true;
+                grid[r][c] = res[r];
+            }
+        }
+    }
+    
+    if (moved) {
+        Sound.play('move');
+        document.getElementById('score').textContent = score;
+        if (score > high) {
+            high = score;
+            Records.set('2048', high);
+            document.getElementById('high').textContent = high;
+        }
+        addRandom();
+        checkGameOver();
+        render();
+    }
+}
+
+function checkGameOver() {
+    for (let r=0; r<S; r++) {
+        for (let c=0; c<S; c++) {
+            if (grid[r][c] === 0) return;
+            if (r < S-1 && grid[r][c] === grid[r+1][c]) return;
+            if (c < S-1 && grid[r][c] === grid[r][c+1]) return;
+        }
+    }
+    gameOver = true;
+    gameRunning = false;
+    Sound.play('lose');
+    render();
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, 400, 400);
+    
+    const colors = {
+        0: {bg: '#1a1a2e', text: 'transparent'},
+        2: {bg: '#eee4da', text: '#776e65'},
+        4: {bg: '#ede0c8', text: '#776e65'},
+        8: {bg: '#f2b179', text: '#f9f6f2'},
+        16: {bg: '#f59563', text: '#f9f6f2'},
+        32: {bg: '#f67c5f', text: '#f9f6f2'},
+        64: {bg: '#f65e3b', text: '#f9f6f2'},
+        128: {bg: '#edcf72', text: '#f9f6f2'},
+        256: {bg: '#edcc61', text: '#f9f6f2'},
+        512: {bg: '#edc850', text: '#f9f6f2'},
+        1024: {bg: '#edc53f', text: '#f9f6f2'},
+        2048: {bg: '#edc22e', text: '#f9f6f2'}
+    };
+    
+    for (let r=0; r<S; r++) {
+        for (let c=0; c<S; c++) {
+            const v = grid[r][c];
+            const col = colors[v] || colors[0];
+            ctx.shadowColor = v > 0 ? 'rgba(255,255,255,0.05)' : 'transparent';
+            ctx.shadowBlur = v > 0 ? 10 : 0;
+            ctx.fillStyle = col.bg;
+            ctx.fillRect(c*CELL+6, r*CELL+6, CELL-12, CELL-12);
+            ctx.shadowBlur = 0;
+            if (v > 0) {
+                const fs = v < 100 ? 32 : v < 1000 ? 28 : 20;
+                ctx.fillStyle = col.text;
+                ctx.font = `bold ${fs}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(v, c*CELL+50, r*CELL+51);
+            }
+        }
+    }
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 160, 400, 80);
+        ctx.fillStyle = '#ef5350';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💀 Конец', 200, 205);
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+document.addEventListener('keydown', e => {
+    const k = e.key;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)) e.preventDefault();
+    if (k === 'ArrowUp') move(-1, 0);
+    if (k === 'ArrowDown') move(1, 0);
+    if (k === 'ArrowLeft') move(0, -1);
+    if (k === 'ArrowRight') move(0, 1);
+});
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop() {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    score = 0;
+    gameOver = false;
+    gameRunning = true;
+    document.getElementById('score').textContent = '0';
+    initGrid();
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+initGrid();
+showOverlay('🔢 2048', 'Нажми "Начать"');
+</script>
+</body>
+</html>
