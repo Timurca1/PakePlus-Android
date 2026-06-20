@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Память</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 460px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: pointer; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #81c784; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #81c784; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🧠 Память</h2>
+        <div class="stats"><span>🎯 <b id="pairs">0</b>/8</span><span>👆 <b id="moves">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="400" height="400"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🧠 Память</h2>
+            <p style="color:#888;margin:4px 0;">Найди все пары</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>🖱</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const EMOJIS = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼'];
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let cards = [], revealed = [], matched = [];
+let first = null, second = null;
+let locked = false;
+let pairs = 0, moves = 0;
+let gameRunning = false, gameOver = false;
+let flipTimer = null, animId = null;
+
+document.getElementById('pairs').textContent = '0';
+document.getElementById('moves').textContent = '0';
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+function initCards() {
+    const deck = [...EMOJIS, ...EMOJIS];
+    for (let i=deck.length-1; i>0; i--) {
+        const j = Math.floor(Math.random() * (i+1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    cards = deck;
+    revealed = new Array(16).fill(false);
+    matched = new Array(16).fill(false);
+    first = null; second = null;
+    locked = false;
+    pairs = 0; moves = 0;
+    document.getElementById('pairs').textContent = '0';
+    document.getElementById('moves').textContent = '0';
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, 400, 400);
+    
+    for (let i=0; i<16; i++) {
+        const r = Math.floor(i/4), c = i%4;
+        const x = c*100, y = r*100;
+        const isRev = revealed[i] || first === i || second === i;
+        const isMat = matched[i];
+        
+        if (isMat) {
+            ctx.fillStyle = 'rgba(129,199,132,0.15)';
+            ctx.fillRect(x+2, y+2, 96, 96);
+            ctx.strokeStyle = 'rgba(129,199,132,0.2)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x+2, y+2, 96, 96);
+        }
+        
+        if (isRev || isMat) {
+            ctx.fillStyle = '#2a2a5e';
+            ctx.shadowColor = 'rgba(78,205,196,0.15)';
+            ctx.shadowBlur = 10;
+            ctx.fillRect(x+2, y+2, 96, 96);
+            ctx.shadowBlur = 0;
+            if (!isMat) {
+                ctx.font = '40px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#fff';
+                ctx.fillText(cards[i], x+50, y+52);
+            } else {
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = 'rgba(129,199,132,0.4)';
+                ctx.fillText('✓', x+50, y+50);
+            }
+        } else {
+            const grad = ctx.createLinearGradient(x, y, x+100, y+100);
+            grad.addColorStop(0, '#4ecdc4');
+            grad.addColorStop(1, '#2ea89e');
+            ctx.shadowColor = 'rgba(78,205,196,0.2)';
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = grad;
+            ctx.fillRect(x+2, y+2, 96, 96);
+            ctx.shadowBlur = 0;
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.fillText('?', x+50, y+50);
+        }
+    }
+}
+
+// ===== ЛОГИКА =====
+function checkMatch() {
+    if (cards[first] === cards[second]) {
+        matched[first] = true; matched[second] = true;
+        pairs++;
+        document.getElementById('pairs').textContent = pairs;
+        Sound.play('win');
+        first = null; second = null; locked = false;
+        render();
+        if (pairs === 8) {
+            gameOver = true; gameRunning = false;
+            setTimeout(() => alert('🎉 Победа!'), 300);
+        }
+        return;
+    }
+    
+    Sound.play('lose');
+    flipTimer = setTimeout(() => {
+        revealed[first] = false; revealed[second] = false;
+        first = null; second = null; locked = false;
+        render();
+        flipTimer = null;
+    }, 500);
+}
+
+function handleClick(e) {
+    if (!gameRunning || gameOver || locked) return;
+    if (flipTimer) {
+        clearTimeout(flipTimer);
+        flipTimer = null;
+        if (first !== null && second !== null) {
+            revealed[first] = false; revealed[second] = false;
+            first = null; second = null; locked = false;
+            render();
+        }
+        return;
+    }
+    
+    const rect = canvas.getBoundingClientRect();
+    const scale = 400 / rect.width;
+    const x = Math.floor((e.clientX - rect.left) * scale / 100);
+    const y = Math.floor((e.clientY - rect.top) * scale / 100);
+    const idx = y*4 + x;
+    if (idx<0 || idx>=16 || matched[idx] || revealed[idx]) return;
+    
+    if (first === null) {
+        first = idx; revealed[idx] = true;
+        Sound.play('click');
+        render(); return;
+    }
+    if (second === null && idx !== first) {
+        second = idx; revealed[idx] = true;
+        moves++;
+        document.getElementById('moves').textContent = moves;
+        Sound.play('click');
+        render();
+        locked = true;
+        checkMatch();
+    }
+}
+
+canvas.addEventListener('click', handleClick);
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop() {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (flipTimer) { clearTimeout(flipTimer); flipTimer = null; }
+    if (animId) cancelAnimationFrame(animId);
+    initCards();
+    gameOver = false; gameRunning = true;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+initCards();
+showOverlay('🧠 Память', 'Нажми "Начать"');
+</script>
+</body>
+</html>
