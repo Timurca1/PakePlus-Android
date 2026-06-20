@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧱 Арканоид</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 560px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #ff6b6b; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ff6b6b; border: none; border-radius: 10px; color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🧱 Арканоид</h2>
+        <div class="stats"><span>🏆 <b id="score">0</b></span><span>❤️ <b id="lives">3</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="500" height="400"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🧱 Арканоид</h2>
+            <p style="color:#888;margin:4px 0;">🖱️ Мышь / ⬅➡</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>🖱</kbd><kbd>⬅</kbd><kbd>➡</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const W = 500, H = 400;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+// ===== СОСТОЯНИЕ =====
+const paddle = {x: W/2-50, y: 370, w: 100, h: 12};
+const ball = {x: W/2, y: 350, r: 8, dx: 5, dy: -6, speed: 6};
+let bricks = [];
+let particles = [];
+let score = 0, lives = 3;
+let gameRunning = false, gameOver = false, win = false;
+let animId = null, lastTime = 0;
+let keys = {};
+
+// DOM
+document.getElementById('score').textContent = '0';
+document.getElementById('lives').textContent = '3';
+
+// ===== БЛОКИ =====
+const COLORS = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#ce93d8'];
+
+function createBricks() {
+    bricks = [];
+    for (let r=0; r<5; r++) {
+        for (let c=0; c<8; c++) {
+            const hp = r < 2 ? 2 : 1;
+            bricks.push({
+                x: 10 + c*60 + 4,
+                y: 25 + r*24 + 4,
+                w: 54, h: 20,
+                hp: hp,
+                maxHp: hp,
+                color: COLORS[r % COLORS.length],
+                alive: true
+            });
+        }
+    }
+}
+
+// ===== ЧАСТИЦЫ =====
+function addParticles(x, y, color, count=15) {
+    for (let i=0; i<count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 4;
+        particles.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 1,
+            life: 20 + Math.random() * 20,
+            maxLife: 40,
+            size: 2 + Math.random() * 3,
+            color: color
+        });
+    }
+}
+
+// ===== ОБНОВЛЕНИЕ =====
+function update(dt) {
+    if (!gameRunning || gameOver || win) return;
+    
+    // Мяч
+    ball.x += ball.dx * dt;
+    ball.y += ball.dy * dt;
+    
+    // Стены
+    if (ball.x - ball.r < 0 || ball.x + ball.r > W) { ball.dx *= -1; Sound.play('move'); }
+    if (ball.y - ball.r < 0) { ball.dy *= -1; Sound.play('move'); }
+    
+    // Потеря
+    if (ball.y + ball.r > H) {
+        lives--;
+        document.getElementById('lives').textContent = lives;
+        Sound.play('lose');
+        if (lives <= 0) { gameOver = true; gameRunning = false; return; }
+        resetBall();
+        return;
+    }
+    
+    // Платформа
+    if (ball.dy > 0 && ball.y + ball.r >= paddle.y && 
+        ball.y + ball.r <= paddle.y + paddle.h + 5 &&
+        ball.x >= paddle.x - ball.r && ball.x <= paddle.x + paddle.w + ball.r) {
+        ball.dy = -ball.dy;
+        const hit = (ball.x - paddle.x) / paddle.w;
+        ball.dx = (hit - 0.5) * 8;
+        ball.dy = -Math.sqrt(ball.speed*ball.speed - ball.dx*ball.dx);
+        Sound.play('click');
+    }
+    
+    // Блоки
+    for (let i=0; i<bricks.length; i++) {
+        const b = bricks[i];
+        if (!b.alive) continue;
+        if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
+            ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
+            b.hp--;
+            if (b.hp <= 0) {
+                b.alive = false;
+                score += 10;
+                document.getElementById('score').textContent = score;
+                addParticles(b.x + b.w/2, b.y + b.h/2, b.color);
+                Sound.play('click');
+            } else {
+                addParticles(b.x + b.w/2, b.y + b.h/2, b.color, 5);
+                Sound.play('move');
+            }
+            const ox = Math.min(ball.x + ball.r - b.x, b.x + b.w - (ball.x - ball.r));
+            const oy = Math.min(ball.y + ball.r - b.y, b.y + b.h - (ball.y - ball.r));
+            if (ox < oy) ball.dx *= -1;
+            else ball.dy *= -1;
+            break;
+        }
+    }
+    
+    // Победа
+    if (bricks.every(b => !b.alive)) {
+        win = true;
+        gameRunning = false;
+        Sound.play('win');
+    }
+    
+    // Частицы
+    for (let i=particles.length-1; i>=0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 0.1 * dt;
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+function resetBall() {
+    ball.x = W/2;
+    ball.y = paddle.y - ball.r;
+    ball.dx = (Math.random() - 0.5) * 4;
+    ball.dy = -5;
+    ball.speed = 6;
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Блоки
+    bricks.forEach(b => {
+        if (!b.alive) return;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.shadowBlur = 0;
+        if (b.hp > 1) {
+            ctx.fillStyle = '#fff';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(b.hp, b.x + b.w/2, b.y + b.h/2 + 1);
+        }
+    });
+    
+    // Платформа
+    ctx.shadowColor = '#4ecdc4';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+    ctx.shadowBlur = 0;
+    
+    // Мяч
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    // Частицы
+    particles.forEach(p => {
+        const alpha = p.life / p.maxLife;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI*2);
+        ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    
+    // Game Over / Win
+    if (gameOver || win) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, H/2-50, W, 100);
+        ctx.fillStyle = win ? '#4ecdc4' : '#ff6b6b';
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(win ? '🎉 Победа!' : '💀 Проигрыш', W/2, H/2+6);
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.preventDefault();
+});
+
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scale = W / rect.width;
+    const x = (e.clientX - rect.left) * scale;
+    paddle.x = Math.max(0, Math.min(W - paddle.w, x - paddle.w/2));
+});
+
+// ===== ДВИЖЕНИЕ ПЛАТФОРМЫ =====
+function movePaddle() {
+    if (!gameRunning || gameOver || win) { requestAnimationFrame(movePaddle); return; }
+    if (keys['ArrowLeft']) paddle.x = Math.max(0, paddle.x - 10);
+    if (keys['ArrowRight']) paddle.x = Math.min(W - paddle.w, paddle.x + 10);
+    requestAnimationFrame(movePaddle);
+}
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop(timestamp) {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min(timestamp - lastTime, 33) / 16.67;
+    lastTime = timestamp;
+    
+    update(dt);
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    particles = [];
+    score = 0;
+    lives = 3;
+    gameOver = false;
+    win = false;
+    gameRunning = true;
+    document.getElementById('score').textContent = '0';
+    document.getElementById('lives').textContent = '3';
+    paddle.x = W/2 - 50;
+    createBricks();
+    resetBall();
+    lastTime = 0;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+createBricks();
+resetBall();
+showOverlay('🧱 Арканоид', 'Нажми "Начать"');
+movePaddle();
+</script>
+</body>
+</html>
