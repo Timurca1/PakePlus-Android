@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐦 Flappy Bird</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 460px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: pointer; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #4fc3f7; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #4fc3f7; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🐦 Flappy Bird</h2>
+        <div class="stats"><span>🏆 <b id="score">0</b></span><span>👑 <b id="high">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="400" height="600"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🐦 Flappy Bird</h2>
+            <p style="color:#888;margin:4px 0;">Клик / Пробел</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>🖱</kbd><kbd>␣</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const W = 400, H = 600;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+// ===== СОСТОЯНИЕ =====
+const bird = {x: 80, y: 300, vy: 0, size: 14};
+let pipes = [];
+let score = 0, high = Records.get('flappy') || 0;
+let gameRunning = false, gameOver = false;
+let animId = null, lastTime = 0;
+let frame = 0;
+
+document.getElementById('high').textContent = high;
+
+// ===== ТРУБЫ =====
+const PIPE_W = 50, GAP = 160, SPEED = 2.5;
+
+function addPipe() {
+    const minY = 60, maxY = H - GAP - 60;
+    const top = Math.random() * (maxY - minY) + minY;
+    pipes.push({x: W, top: top, bottom: top + GAP, passed: false});
+}
+
+// ===== ОБНОВЛЕНИЕ =====
+function update(dt) {
+    if (!gameRunning || gameOver) return;
+    frame++;
+    
+    bird.vy += 0.5 * dt;
+    bird.y += bird.vy * dt;
+    
+    if (bird.y - bird.size < 0) { bird.y = bird.size; bird.vy = 0; }
+    if (bird.y + bird.size > H) { endGame(); return; }
+    
+    if (pipes.length === 0 || pipes[pipes.length-1].x < W - 250) addPipe();
+    
+    for (let i=pipes.length-1; i>=0; i--) {
+        const p = pipes[i];
+        p.x -= SPEED * dt;
+        if (p.x + PIPE_W < -50) { pipes.splice(i, 1); continue; }
+        if (!p.passed && p.x + PIPE_W < bird.x) {
+            p.passed = true;
+            score++;
+            document.getElementById('score').textContent = score;
+            Sound.play('click');
+        }
+        if (bird.x + bird.size > p.x && bird.x - bird.size < p.x + PIPE_W) {
+            if (bird.y - bird.size < p.top || bird.y + bird.size > p.bottom) {
+                endGame();
+                return;
+            }
+        }
+    }
+}
+
+function endGame() {
+    gameOver = true; gameRunning = false;
+    Sound.play('lose');
+    if (score > high) {
+        high = score;
+        Records.set('flappy', high);
+        document.getElementById('high').textContent = high;
+    }
+    render();
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Звёзды
+    for (let i=0; i<30; i++) {
+        const x = (i*137 + i*i*7) % W;
+        const y = (i*251 + i*i*3) % (H * 0.5);
+        ctx.fillStyle = `rgba(255,255,255,${0.1 + (i%5)*0.1})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + i%3, 0, Math.PI*2);
+        ctx.fill();
+    }
+    
+    // Трубы
+    pipes.forEach(p => {
+        ctx.fillStyle = '#2d8a4e';
+        ctx.fillRect(p.x, 0, PIPE_W, p.top);
+        ctx.fillRect(p.x-5, p.top-16, PIPE_W+10, 16);
+        ctx.fillRect(p.x, p.bottom, PIPE_W, H-p.bottom);
+        ctx.fillRect(p.x-5, p.bottom, PIPE_W+10, 16);
+        ctx.fillStyle = '#4caf50';
+        ctx.fillRect(p.x+4, 0, PIPE_W-8, p.top);
+        ctx.fillRect(p.x+4, p.bottom, PIPE_W-8, H-p.bottom);
+    });
+    
+    // Птица
+    const rot = bird.vy > 0 ? Math.min(bird.vy*0.02, 0.3) : Math.max(bird.vy*0.02, -0.2);
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(rot);
+    ctx.shadowColor = '#ffd93d';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#ffd93d';
+    ctx.beginPath();
+    ctx.arc(0, 0, bird.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Крыло
+    ctx.fillStyle = '#f5c400';
+    ctx.beginPath();
+    ctx.ellipse(-3, -5, 8, 5, Math.sin(frame/6)*0.3+0.2, 0, Math.PI*2);
+    ctx.fill();
+    // Глаз
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(4, -3, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#0a0a1a';
+    ctx.beginPath();
+    ctx.arc(6, -3, 2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+    
+    // Счёт
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 40px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
+    ctx.fillText(score, W/2, 20);
+    ctx.shadowBlur = 0;
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, H/2-50, W, 100);
+        ctx.fillStyle = '#ef5350';
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💀 Проигрыш', W/2, H/2+6);
+        ctx.fillStyle = '#888';
+        ctx.font = '16px Arial';
+        ctx.fillText(`Счёт: ${score}`, W/2, H/2+44);
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+function jump() {
+    if (!gameRunning || gameOver) return;
+    bird.vy = -7;
+    Sound.play('move');
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Space') { e.preventDefault(); jump(); }
+});
+
+canvas.addEventListener('click', jump);
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop(timestamp) {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min(timestamp - lastTime, 33) / 16.67;
+    lastTime = timestamp;
+    
+    update(dt);
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    bird.y = 300; bird.vy = 0;
+    pipes = [];
+    score = 0;
+    gameOver = false;
+    gameRunning = true;
+    frame = 0;
+    document.getElementById('score').textContent = '0';
+    lastTime = 0;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+showOverlay('🐦 Flappy Bird', 'Нажми "Начать"');
+</script>
+</body>
+</html>
