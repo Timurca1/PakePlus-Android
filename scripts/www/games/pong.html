@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏓 Pong</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 660px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #64b5f6; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #64b5f6; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+        .controls-extra { display: flex; gap: 16px; align-items: center; color: #888; font-size: 13px; }
+        .controls-extra input[type="range"] { width: 80px; accent-color: #4ecdc4; background: #333; height: 4px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>🏓 Pong</h2>
+        <div class="stats"><span>👤 <b id="p1Score">0</b></span><span>🤖 <b id="p2Score">0</b></span><span>⚡ <b id="speedDisplay">1</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="600" height="400"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>🏓 Pong</h2>
+            <p style="color:#888;margin:4px 0;">⬆⬇</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>⬆</kbd><kbd>⬇</kbd></div>
+        <div class="controls-extra">
+            <label>Скорость ИИ <input type="range" id="aiSpeed" min="1" max="8" value="4"></label>
+            <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+        </div>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const W = 600, H = 400;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const aiSpeedRange = document.getElementById('aiSpeed');
+
+// ===== СОСТОЯНИЕ =====
+const player = {x: 20, y: H/2-50, w: 14, h: 100, speed: 10};
+const ai = {x: W-34, y: H/2-50, w: 14, h: 100, speed: 4};
+const ball = {x: W/2, y: H/2, r: 8, dx: 7, dy: 4, speed: 7, trail: []};
+
+let p1Score = 0, p2Score = 0;
+let speedLevel = 1;
+let gameRunning = false, gameOver = false;
+let animId = null, lastTime = 0;
+let keys = {};
+
+// DOM
+document.getElementById('p1Score').textContent = '0';
+document.getElementById('p2Score').textContent = '0';
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 18]);
+    ctx.beginPath();
+    ctx.moveTo(W/2, 0);
+    ctx.lineTo(W/2, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // След мяча
+    ball.trail.forEach((t, i) => {
+        const a = (i / ball.trail.length) * 0.2;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#64b5f6';
+        const r = ball.r * (0.3 + 0.7 * i / ball.trail.length);
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, r, 0, Math.PI*2);
+        ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    
+    // Мяч
+    ctx.shadowColor = '#64b5f6';
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    // Игрок
+    ctx.shadowColor = '#4ecdc4';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.shadowBlur = 0;
+    
+    // ИИ
+    ctx.shadowColor = '#ef5350';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#ef5350';
+    ctx.fillRect(ai.x, ai.y, ai.w, ai.h);
+    ctx.shadowBlur = 0;
+    
+    // Счёт
+    ctx.font = 'bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fillText(p1Score, W/4, 16);
+    ctx.fillText(p2Score, W*3/4, 16);
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, H/2-50, W, 100);
+        ctx.fillStyle = p1Score > p2Score ? '#4ecdc4' : '#ef5350';
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p1Score > p2Score ? '🏆 Победа!' : '💀 Поражение', W/2, H/2+6);
+        ctx.fillStyle = '#888';
+        ctx.font = '16px Arial';
+        ctx.fillText(`${p1Score} : ${p2Score}`, W/2, H/2+44);
+    }
+}
+
+// ===== ОБНОВЛЕНИЕ =====
+function resetBall() {
+    ball.x = W/2;
+    ball.y = H/2 + (Math.random()-0.5)*60;
+    const angle = (Math.random()-0.5)*0.8;
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    ball.dx = dir * ball.speed * Math.cos(angle);
+    ball.dy = ball.speed * Math.sin(angle);
+    ball.trail = [];
+}
+
+function update(dt) {
+    if (!gameRunning || gameOver) return;
+    
+    ball.trail.push({x: ball.x, y: ball.y});
+    if (ball.trail.length > 10) ball.trail.shift();
+    
+    ball.x += ball.dx * dt;
+    ball.y += ball.dy * dt;
+    
+    if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+        ball.dy *= -1;
+        Sound.play('move');
+    }
+    
+    // Голы
+    if (ball.x - ball.r < -20) {
+        p2Score++;
+        document.getElementById('p2Score').textContent = p2Score;
+        Sound.play('lose');
+        if (p2Score >= 5) { gameOver = true; gameRunning = false; return; }
+        resetBall(); speedLevel = 1;
+        document.getElementById('speedDisplay').textContent = speedLevel;
+        return;
+    }
+    if (ball.x + ball.r > W + 20) {
+        p1Score++;
+        document.getElementById('p1Score').textContent = p1Score;
+        Sound.play('win');
+        if (p1Score >= 5) { gameOver = true; gameRunning = false; return; }
+        resetBall(); speedLevel = 1;
+        document.getElementById('speedDisplay').textContent = speedLevel;
+        return;
+    }
+    
+    // Столкновение с игроком
+    if (ball.dx < 0 && ball.x - ball.r < player.x + player.w &&
+        ball.x + ball.r > player.x && ball.y > player.y && ball.y < player.y + player.h) {
+        const hit = (ball.y - player.y) / player.h;
+        ball.dx = Math.abs(ball.dx) * 1.05;
+        ball.dy = (hit - 0.5) * 8 * (1 + speedLevel * 0.1);
+        speedLevel = Math.min(5, speedLevel + 0.3);
+        document.getElementById('speedDisplay').textContent = Math.floor(speedLevel);
+        ball.speed = 6 + speedLevel * 0.5;
+        Sound.play('click');
+    }
+    
+    // Столкновение с ИИ
+    if (ball.dx > 0 && ball.x + ball.r > ai.x &&
+        ball.x - ball.r < ai.x + ai.w && ball.y > ai.y && ball.y < ai.y + ai.h) {
+        const hit = (ball.y - ai.y) / ai.h;
+        ball.dx = -Math.abs(ball.dx) * 1.02;
+        ball.dy = (hit - 0.5) * 8 * (1 + speedLevel * 0.05);
+        Sound.play('click');
+    }
+    
+    // ИИ
+    const aiSpeed = parseFloat(aiSpeedRange.value);
+    const target = ball.y - ai.h/2;
+    const diff = target - ai.y;
+    if (Math.abs(diff) > 8) {
+        ai.y += Math.sign(diff) * aiSpeed * (0.6 + speedLevel * 0.04) * dt;
+    }
+    ai.y = Math.max(0, Math.min(H - ai.h, ai.y));
+}
+
+// ===== УПРАВЛЕНИЕ =====
+document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function movePlayer() {
+    if (!gameRunning || gameOver) { requestAnimationFrame(movePlayer); return; }
+    if (keys['ArrowUp']) player.y = Math.max(0, player.y - player.speed);
+    if (keys['ArrowDown']) player.y = Math.min(H - player.h, player.y + player.speed);
+    requestAnimationFrame(movePlayer);
+}
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== ЦИКЛ =====
+function loop(timestamp) {
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min(timestamp - lastTime, 33) / 16.67;
+    lastTime = timestamp;
+    
+    update(dt);
+    render();
+    animId = requestAnimationFrame(loop);
+}
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    if (animId) cancelAnimationFrame(animId);
+    p1Score = 0; p2Score = 0;
+    speedLevel = 1;
+    gameOver = false; gameRunning = true;
+    document.getElementById('p1Score').textContent = '0';
+    document.getElementById('p2Score').textContent = '0';
+    document.getElementById('speedDisplay').textContent = '1';
+    player.y = H/2 - 50;
+    ai.y = H/2 - 50;
+    ball.speed = 7;
+    resetBall();
+    lastTime = 0;
+    hideOverlay();
+    animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+resetBall();
+showOverlay('🏓 Pong', 'Нажми "Начать"');
+movePlayer();
+</script>
+</body>
+</html>
