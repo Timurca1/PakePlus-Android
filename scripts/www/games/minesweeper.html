@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💣 Сапёр</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .game-wrapper { max-width: 460px; }
+        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: pointer; }
+        .game-overlay {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+        }
+        .game-overlay.active { opacity: 1; pointer-events: all; }
+        .game-overlay h2 { font-size: 32px; color: #ce93d8; }
+        .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ce93d8; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
+        .game-overlay .btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <div class="game-header">
+        <h2>💣 Сапёр</h2>
+        <div class="stats"><span>💣 <b id="mines">10</b></span><span>🚩 <b id="flags">0</b></span><span>⏱️ <b id="timer">0</b></span></div>
+        <a href="../index.html" class="menu-btn">← Меню</a>
+    </div>
+    <div style="position:relative;">
+        <canvas id="game" width="400" height="400"></canvas>
+        <div class="game-overlay" id="overlay">
+            <h2>💣 Сапёр</h2>
+            <p style="color:#888;margin:4px 0;">ЛКМ открыть • ПКМ флаг</p>
+            <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+    </div>
+    <div class="game-controls">
+        <div class="keys"><kbd>🖱</kbd><kbd>🚩</kbd></div>
+        <button class="reset-btn" onclick="resetGame()">🔄 Новая</button>
+    </div>
+</div>
+<script src="../engine.js"></script>
+<script>
+const SIZE = 10, CELL = 40, MINES = 12;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let board = [], revealed = [], flags = [];
+let flagCount = 0, timer = 0;
+let gameRunning = false, gameOver = false, firstClick = true;
+let animId = null, timerInterval = null;
+
+document.getElementById('mines').textContent = MINES;
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+function initBoard() {
+    board = []; revealed = []; flags = [];
+    for (let r=0; r<SIZE; r++) {
+        board[r] = new Array(SIZE).fill(0);
+        revealed[r] = new Array(SIZE).fill(false);
+        flags[r] = new Array(SIZE).fill(false);
+    }
+    flagCount = 0;
+    document.getElementById('flags').textContent = '0';
+    document.getElementById('timer').textContent = '0';
+    timer = 0;
+}
+
+function placeMines(excludeX, excludeY) {
+    let placed = 0;
+    while (placed < MINES) {
+        const x = Math.floor(Math.random() * SIZE);
+        const y = Math.floor(Math.random() * SIZE);
+        if (board[y][x] === -1 || (x === excludeX && y === excludeY)) continue;
+        board[y][x] = -1;
+        placed++;
+    }
+    for (let r=0; r<SIZE; r++) {
+        for (let c=0; c<SIZE; c++) {
+            if (board[r][c] === -1) continue;
+            let n = 0;
+            for (let dr=-1; dr<=1; dr++) {
+                for (let dc=-1; dc<=1; dc++) {
+                    const nr = r+dr, nc = c+dc;
+                    if (nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && board[nr][nc] === -1) n++;
+                }
+            }
+            board[r][c] = n;
+        }
+    }
+}
+
+function reveal(r, c) {
+    if (r<0 || r>=SIZE || c<0 || c>=SIZE || revealed[r][c] || flags[r][c]) return;
+    revealed[r][c] = true;
+    if (board[r][c] === -1) {
+        gameOver = true; gameRunning = false;
+        Sound.play('lose');
+        revealAll();
+        return;
+    }
+    if (board[r][c] === 0) {
+        for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) reveal(r+dr, c+dc);
+    }
+}
+
+function revealAll() {
+    for (let r=0; r<SIZE; r++) for (let c=0; c<SIZE; c++) revealed[r][c] = true;
+}
+
+function checkWin() {
+    let total = 0;
+    for (let r=0; r<SIZE; r++) {
+        for (let c=0; c<SIZE; c++) {
+            if (board[r][c] === -1 && flags[r][c]) total++;
+            if (board[r][c] !== -1 && !revealed[r][c]) return false;
+        }
+    }
+    return total === MINES;
+}
+
+// ===== ОТРИСОВКА =====
+function render() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, 400, 400);
+    
+    const nums = ['', '1','2','3','4','5','6','7','8'];
+    const colors = ['', '#4ecdc4','#81c784','#ffd93d','#ff6b6b','#ce93d8','#64b5f6','#ffb74d','#ef5350'];
+    
+    for (let r=0; r<SIZE; r++) {
+        for (let c=0; c<SIZE; c++) {
+            const x = c*CELL, y = r*CELL;
+            if (revealed[r][c]) {
+                ctx.fillStyle = '#1a1a3a';
+                ctx.fillRect(x, y, CELL-1, CELL-1);
+                if (board[r][c] === -1) {
+                    ctx.font = '22px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#ef5350';
+                    ctx.shadowColor = '#ef5350';
+                    ctx.shadowBlur = 15;
+                    ctx.fillText('💣', x+CELL/2, y+CELL/2+2);
+                    ctx.shadowBlur = 0;
+                } else if (board[r][c] > 0) {
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = colors[board[r][c]];
+                    ctx.fillText(nums[board[r][c]], x+CELL/2, y+CELL/2+1);
+                }
+            } else {
+                ctx.fillStyle = flags[r][c] ? '#2a1a2a' : '#2a2a5a';
+                ctx.fillRect(x, y, CELL-1, CELL-1);
+                if (flags[r][c]) {
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#ff6b6b';
+                    ctx.fillText('🚩', x+CELL/2, y+CELL/2+2);
+                }
+            }
+        }
+    }
+    
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 160, 400, 80);
+        ctx.fillStyle = '#ef5350';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💀 Взорвался!', 200, 205);
+    }
+}
+
+// ===== УПРАВЛЕНИЕ =====
+function handleClick(e) {
+    if (!gameRunning || gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = 400 / rect.width;
+    const x = Math.floor((e.clientX - rect.left) * scale / CELL);
+    const y = Math.floor((e.clientY - rect.top) * scale / CELL);
+    if (x<0 || x>=SIZE || y<0 || y>=SIZE) return;
+    
+    // ПКМ - флаг
+    if (e.button === 2) {
+        if (revealed[y][x]) return;
+        flags[y][x] = !flags[y][x];
+        flagCount += flags[y][x] ? 1 : -1;
+        document.getElementById('flags').textContent = flagCount;
+        Sound.play('move');
+        render();
+        if (checkWin()) { gameOver = true; gameRunning = false; Sound.play('win'); revealAll(); render(); }
+        return;
+    }
+    
+    if (flags[y][x]) return;
+    if (firstClick) {
+        placeMines(x, y);
+        firstClick = false;
+        timerInterval = setInterval(() => {
+            timer++;
+            document.getElementById('timer').textContent = timer;
+        }, 1000);
+    }
+    reveal(y, x);
+    render();
+    if (checkWin()) {
+        gameOver = true; gameRunning = false;
+        Sound.play('win');
+        revealAll();
+        render();
+        setTimeout(() => alert('🎉 Победа!'), 300);
+    }
+}
+
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ===== ОВЕРЛЕЙ =====
+function showOverlay(title, sub) {
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = sub || '';
+    overlay.classList.add('active');
+}
+function hideOverlay() { overlay.classList.remove('active'); }
+
+// ===== РЕСТАРТ =====
+function resetGame() {
+    clearInterval(timerInterval);
+    initBoard();
+    gameOver = false; firstClick = true; gameRunning = true;
+    render();
+    hideOverlay();
+}
+
+startBtn.addEventListener('click', resetGame);
+
+// ===== СТАРТ =====
+initBoard();
+showOverlay('💣 Сапёр', 'Нажми "Начать"');
+</script>
+</body>
+</html>
