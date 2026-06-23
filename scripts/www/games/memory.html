@@ -2,22 +2,65 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🧠 Память</title>
     <link rel="stylesheet" href="../style.css">
     <style>
-        .game-wrapper { max-width: 460px; }
-        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: pointer; }
+        .game-wrapper { max-width: 460px; margin: 0 auto; }
+        .canvas-wrapper { position: relative; border-radius: 12px; overflow: hidden; background: #0a0a1a; touch-action: none; }
+        canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: pointer; }
         .game-overlay {
             position: absolute; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
             opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+            z-index: 5;
         }
         .game-overlay.active { opacity: 1; pointer-events: all; }
         .game-overlay h2 { font-size: 32px; color: #81c784; }
         .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #81c784; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
         .game-overlay .btn:hover { transform: scale(1.05); }
+        
+        #touch-controls {
+            position: absolute !important;
+            bottom: 15px !important;
+            right: 15px !important;
+            display: none !important;
+            pointer-events: none !important;
+            z-index: 10 !important;
+        }
+        #touch-controls button {
+            width: 55px !important;
+            height: 55px !important;
+            border-radius: 50% !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(8px) !important;
+            color: white !important;
+            font-size: 22px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: none !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            transition: background 0.15s !important;
+            pointer-events: all !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+        }
+        #touch-controls button:active {
+            background: rgba(255,255,255,0.3) !important;
+            transform: scale(0.9) !important;
+        }
+        @media (max-width: 600px) {
+            #touch-controls button { width: 48px !important; height: 48px !important; font-size: 18px !important; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls { display: block !important; }
+        }
     </style>
 </head>
 <body>
@@ -27,12 +70,16 @@
         <div class="stats"><span>🎯 <b id="pairs">0</b>/8</span><span>👆 <b id="moves">0</b></span></div>
         <a href="../index.html" class="menu-btn">← Меню</a>
     </div>
-    <div style="position:relative;">
+    <div class="canvas-wrapper">
         <canvas id="game" width="400" height="400"></canvas>
         <div class="game-overlay" id="overlay">
             <h2>🧠 Память</h2>
             <p style="color:#888;margin:4px 0;">Найди все пары</p>
             <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+        
+        <div id="touch-controls">
+            <button data-action="restart">🔄</button>
         </div>
     </div>
     <div class="game-controls">
@@ -57,6 +104,79 @@ let flipTimer = null, animId = null;
 
 document.getElementById('pairs').textContent = '0';
 document.getElementById('moves').textContent = '0';
+
+// ===== СЕНСОРНОЕ УПРАВЛЕНИЕ =====
+function setupTouchControls() {
+    // Кнопка рестарта
+    const restartBtn = document.querySelector('#touch-controls button[data-action="restart"]');
+    if (restartBtn) {
+        restartBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            resetGame();
+            restartBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { restartBtn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        }, { passive: false });
+        restartBtn.addEventListener('mousedown', () => {
+            resetGame();
+            restartBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { restartBtn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        });
+    }
+    
+    // Тап по канвасу
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!gameRunning || gameOver || locked) return;
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const scale = 400 / rect.width;
+        const x = Math.floor((touch.clientX - rect.left) * scale / 100);
+        const y = Math.floor((touch.clientY - rect.top) * scale / 100);
+        handleCardClick(y * 4 + x);
+    }, { passive: false });
+    
+    canvas.addEventListener('click', (e) => {
+        if (!gameRunning || gameOver || locked) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = 400 / rect.width;
+        const x = Math.floor((e.clientX - rect.left) * scale / 100);
+        const y = Math.floor((e.clientY - rect.top) * scale / 100);
+        handleCardClick(y * 4 + x);
+    });
+}
+
+function handleCardClick(idx) {
+    if (idx < 0 || idx >= 16 || matched[idx] || revealed[idx]) return;
+    if (flipTimer) {
+        clearTimeout(flipTimer);
+        flipTimer = null;
+        if (first !== null && second !== null) {
+            revealed[first] = false;
+            revealed[second] = false;
+            first = null; second = null; locked = false;
+            render();
+        }
+        return;
+    }
+    
+    if (first === null) {
+        first = idx;
+        revealed[idx] = true;
+        Sound.play('click');
+        render();
+        return;
+    }
+    if (second === null && idx !== first) {
+        second = idx;
+        revealed[idx] = true;
+        moves++;
+        document.getElementById('moves').textContent = moves;
+        Sound.play('click');
+        render();
+        locked = true;
+        checkMatch();
+    }
+}
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 function initCards() {
@@ -156,44 +276,6 @@ function checkMatch() {
     }, 500);
 }
 
-function handleClick(e) {
-    if (!gameRunning || gameOver || locked) return;
-    if (flipTimer) {
-        clearTimeout(flipTimer);
-        flipTimer = null;
-        if (first !== null && second !== null) {
-            revealed[first] = false; revealed[second] = false;
-            first = null; second = null; locked = false;
-            render();
-        }
-        return;
-    }
-    
-    const rect = canvas.getBoundingClientRect();
-    const scale = 400 / rect.width;
-    const x = Math.floor((e.clientX - rect.left) * scale / 100);
-    const y = Math.floor((e.clientY - rect.top) * scale / 100);
-    const idx = y*4 + x;
-    if (idx<0 || idx>=16 || matched[idx] || revealed[idx]) return;
-    
-    if (first === null) {
-        first = idx; revealed[idx] = true;
-        Sound.play('click');
-        render(); return;
-    }
-    if (second === null && idx !== first) {
-        second = idx; revealed[idx] = true;
-        moves++;
-        document.getElementById('moves').textContent = moves;
-        Sound.play('click');
-        render();
-        locked = true;
-        checkMatch();
-    }
-}
-
-canvas.addEventListener('click', handleClick);
-
 // ===== ОВЕРЛЕЙ =====
 function showOverlay(title, sub) {
     overlay.querySelector('h2').textContent = title;
@@ -223,6 +305,7 @@ startBtn.addEventListener('click', resetGame);
 
 // ===== СТАРТ =====
 initCards();
+setupTouchControls();
 showOverlay('🧠 Память', 'Нажми "Начать"');
 </script>
 </body>
