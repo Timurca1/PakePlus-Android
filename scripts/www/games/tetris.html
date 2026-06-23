@@ -2,27 +2,96 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🧩 Тетрис</title>
     <link rel="stylesheet" href="../style.css">
     <style>
-        .game-wrapper { max-width: 500px; }
-        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-wrapper { max-width: 500px; margin: 0 auto; }
+        .canvas-wrapper { position: relative; border-radius: 12px; overflow: hidden; background: #0a0a1a; touch-action: none; }
+        canvas { display: block; width: 100%; height: auto; touch-action: none; }
         .game-overlay {
             position: absolute; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
             opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+            z-index: 5;
         }
         .game-overlay.active { opacity: 1; pointer-events: all; }
         .game-overlay h2 { font-size: 32px; color: #ffd93d; }
         .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ffd93d; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
         .game-overlay .btn:hover { transform: scale(1.05); }
-        .game-container { display: flex; gap: 16px; align-items: flex-start; }
+        .game-container { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
         .next-box { background: #0a0a1a; border-radius: 12px; padding: 12px; text-align: center; min-width: 100px; }
         .next-box span { color: #888; font-size: 12px; display: block; margin-bottom: 8px; }
         .next-box canvas { width: 80px; height: 80px; }
-        @media (max-width: 600px) { .game-container { flex-direction: column; align-items: center; } }
+        
+        #touch-controls {
+            position: absolute !important;
+            bottom: 10px !important;
+            left: 0 !important;
+            right: 0 !important;
+            display: none !important;
+            justify-content: space-between !important;
+            padding: 0 10px !important;
+            pointer-events: none !important;
+            z-index: 10 !important;
+        }
+        #touch-controls .btn-group {
+            display: flex !important;
+            gap: 8px !important;
+            pointer-events: all !important;
+            flex-wrap: wrap !important;
+        }
+        #touch-controls button {
+            width: 52px !important;
+            height: 52px !important;
+            border-radius: 50% !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(8px) !important;
+            color: white !important;
+            font-size: 20px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: none !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            transition: background 0.15s !important;
+            pointer-events: all !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+        }
+        #touch-controls button:active {
+            background: rgba(255,255,255,0.3) !important;
+            transform: scale(0.9) !important;
+        }
+        .tetris-dpad {
+            display: grid !important;
+            grid-template-columns: 52px 52px 52px !important;
+            grid-template-rows: 52px 52px 52px !important;
+            gap: 4px !important;
+            pointer-events: all !important;
+        }
+        .tetris-dpad button { width: 100% !important; height: 100% !important; border-radius: 10px !important; font-size: 18px !important; }
+        .tetris-dpad .empty { visibility: hidden !important; }
+        
+        @media (max-width: 600px) {
+            #touch-controls { display: flex !important; }
+            #touch-controls button { width: 44px !important; height: 44px !important; font-size: 16px !important; }
+            .tetris-dpad { grid-template-columns: 44px 44px 44px !important; grid-template-rows: 44px 44px 44px !important; }
+            .next-box { min-width: 70px; padding: 8px; }
+            .next-box canvas { width: 60px; height: 60px; }
+        }
+        @media (max-width: 400px) {
+            #touch-controls button { width: 36px !important; height: 36px !important; font-size: 12px !important; }
+            .tetris-dpad { grid-template-columns: 36px 36px 36px !important; grid-template-rows: 36px 36px 36px !important; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls { display: flex !important; }
+        }
     </style>
 </head>
 <body>
@@ -32,7 +101,7 @@
         <div class="stats"><span>🏆 <b id="score">0</b></span><span>📊 <b id="lines">0</b></span></div>
         <a href="../index.html" class="menu-btn">← Меню</a>
     </div>
-    <div style="position:relative;">
+    <div class="canvas-wrapper">
         <div class="game-container">
             <div style="position:relative;">
                 <canvas id="game" width="300" height="600"></canvas>
@@ -40,6 +109,24 @@
                     <h2>🧩 Тетрис</h2>
                     <p style="color:#888;margin:4px 0;">⬆ поворот ⬇ ускорить ⬅➡</p>
                     <button class="btn" id="startBtn">▶ Начать</button>
+                </div>
+                
+                <!-- Сенсорные кнопки -->
+                <div id="touch-controls">
+                    <div class="btn-group">
+                        <div class="tetris-dpad">
+                            <div class="empty"></div>
+                            <button data-action="rotate">↻</button>
+                            <div class="empty"></div>
+                            <button data-action="left">⬅</button>
+                            <button data-action="down">⬇</button>
+                            <button data-action="right">➡</button>
+                        </div>
+                    </div>
+                    <div class="btn-group" style="flex-direction:column;gap:8px;">
+                        <button data-action="drop" style="width:52px !important;height:52px !important;font-size:18px !important;">⤓</button>
+                        <button data-action="restart" style="width:52px !important;height:52px !important;font-size:18px !important;">🔄</button>
+                    </div>
                 </div>
             </div>
             <div class="next-box">
@@ -79,21 +166,44 @@ let current = null, next = null;
 let score = 0, lines = 0;
 let gameRunning = false, gameOver = false;
 let dropCounter = 0;
-
-// ===== СКОРОСТЬ ПАДЕНИЯ (МЕНЯЙ ТОЛЬКО ЗДЕСЬ) =====
-// 500  = быстро    (0.5 сек)
-// 800  = средне    (0.8 сек)  
-// 1000 = классика  (1 сек)
-// 1500 = медленно  (1.5 сек)
-// 2000 = очень медленно (2 сек)
-// 3000 = супер-медленно (3 сек)
-const DROP_INTERVAL = 20000; // <- МЕНЯЙ ЭТО ЧИСЛО
-
+const DROP_INTERVAL = 15000;
 let animId = null, lastTime = 0;
 
-// DOM
 document.getElementById('score').textContent = '0';
 document.getElementById('lines').textContent = '0';
+
+// ===== СЕНСОРНОЕ УПРАВЛЕНИЕ =====
+function setupTouchControls() {
+    const buttons = document.querySelectorAll('#touch-controls button[data-action]');
+    buttons.forEach(btn => {
+        const action = btn.dataset.action;
+        const handlePress = (e) => {
+            e.preventDefault();
+            if (!gameRunning || gameOver) return;
+            handleAction(action);
+            btn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { btn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        };
+        btn.addEventListener('touchstart', handlePress, { passive: false });
+        btn.addEventListener('mousedown', handlePress);
+    });
+}
+
+function handleAction(action) {
+    if (action === 'restart') { resetGame(); return; }
+    if (action === 'left' && isValid(current.m, current.x-1, current.y)) { current.x--; Sound.play('move'); }
+    if (action === 'right' && isValid(current.m, current.x+1, current.y)) { current.x++; Sound.play('move'); }
+    if (action === 'down' && isValid(current.m, current.x, current.y+1)) { current.y++; dropCounter = 0; Sound.play('move'); }
+    if (action === 'rotate') {
+        const r = current.m[0].map((_, i) => current.m.map(row => row[i]).reverse());
+        if (isValid(r, current.x, current.y)) { current.m = r; Sound.play('click'); }
+    }
+    if (action === 'drop') {
+        while (isValid(current.m, current.x, current.y+1)) current.y++;
+        lockPiece();
+        Sound.play('click');
+    }
+}
 
 // ===== ДОСКА =====
 function createBoard() {
@@ -158,7 +268,6 @@ function clearLines() {
         document.getElementById('score').textContent = score;
         document.getElementById('lines').textContent = lines;
         Sound.play('win');
-        // ⚠️ СКОРОСТЬ НЕ МЕНЯЕТСЯ! ВСЕГДА DROP_INTERVAL
     }
 }
 
@@ -225,11 +334,11 @@ function drawNext() {
     }
 }
 
-// ===== ОБНОВЛЕНИЕ (СКОРОСТЬ ВСЕГДА ПОСТОЯННАЯ) =====
+// ===== ОБНОВЛЕНИЕ =====
 function update(dt) {
     if (!gameRunning || gameOver) return;
     dropCounter += dt * 1000;
-    if (dropCounter >= DROP_INTERVAL) {  // <- ВСЕГДА ОДИНАКОВО
+    if (dropCounter >= DROP_INTERVAL) {
         dropCounter = 0;
         if (isValid(current.m, current.x, current.y + 1)) {
             current.y++;
@@ -240,7 +349,7 @@ function update(dt) {
     }
 }
 
-// ===== УПРАВЛЕНИЕ =====
+// ===== КЛАВИАТУРА =====
 document.addEventListener('keydown', e => {
     if (!gameRunning || gameOver) return;
     const k = e.key;
@@ -305,6 +414,7 @@ createBoard();
 current = randomPiece();
 next = randomPiece();
 drawNext();
+setupTouchControls();
 showOverlay('🧩 Тетрис', 'Нажми "Начать"');
 </script>
 </body>
