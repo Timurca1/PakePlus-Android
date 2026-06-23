@@ -2,22 +2,65 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>💣 Сапёр</title>
     <link rel="stylesheet" href="../style.css">
     <style>
-        .game-wrapper { max-width: 460px; }
-        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: pointer; }
+        .game-wrapper { max-width: 460px; margin: 0 auto; }
+        .canvas-wrapper { position: relative; border-radius: 12px; overflow: hidden; background: #0a0a1a; touch-action: none; }
+        canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: pointer; }
         .game-overlay {
             position: absolute; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
             opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+            z-index: 5;
         }
         .game-overlay.active { opacity: 1; pointer-events: all; }
         .game-overlay h2 { font-size: 32px; color: #ce93d8; }
         .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ce93d8; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
         .game-overlay .btn:hover { transform: scale(1.05); }
+        
+        #touch-controls {
+            position: absolute !important;
+            bottom: 15px !important;
+            right: 15px !important;
+            display: none !important;
+            pointer-events: none !important;
+            z-index: 10 !important;
+        }
+        #touch-controls button {
+            width: 60px !important;
+            height: 60px !important;
+            border-radius: 50% !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(8px) !important;
+            color: white !important;
+            font-size: 26px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: none !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            transition: background 0.15s !important;
+            pointer-events: all !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+        }
+        #touch-controls button:active {
+            background: rgba(255,255,255,0.3) !important;
+            transform: scale(0.9) !important;
+        }
+        @media (max-width: 600px) {
+            #touch-controls button { width: 50px !important; height: 50px !important; font-size: 22px !important; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls { display: block !important; }
+        }
     </style>
 </head>
 <body>
@@ -27,12 +70,16 @@
         <div class="stats"><span>💣 <b id="mines">10</b></span><span>🚩 <b id="flags">0</b></span><span>⏱️ <b id="timer">0</b></span></div>
         <a href="../index.html" class="menu-btn">← Меню</a>
     </div>
-    <div style="position:relative;">
+    <div class="canvas-wrapper">
         <canvas id="game" width="400" height="400"></canvas>
         <div class="game-overlay" id="overlay">
             <h2>💣 Сапёр</h2>
             <p style="color:#888;margin:4px 0;">ЛКМ открыть • ПКМ флаг</p>
             <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+        
+        <div id="touch-controls">
+            <button data-action="flag">🚩</button>
         </div>
     </div>
     <div class="game-controls">
@@ -52,8 +99,90 @@ let board = [], revealed = [], flags = [];
 let flagCount = 0, timer = 0;
 let gameRunning = false, gameOver = false, firstClick = true;
 let animId = null, timerInterval = null;
+let flagMode = false;
 
 document.getElementById('mines').textContent = MINES;
+
+// ===== СЕНСОРНОЕ УПРАВЛЕНИЕ =====
+function setupTouchControls() {
+    // Кнопка флага
+    const flagBtn = document.querySelector('#touch-controls button[data-action="flag"]');
+    if (flagBtn) {
+        flagBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            flagMode = !flagMode;
+            flagBtn.style.background = flagMode ? 'rgba(255,100,100,0.3)' : 'rgba(255,255,255,0.1)';
+            flagBtn.textContent = flagMode ? '✅' : '🚩';
+        }, { passive: false });
+        flagBtn.addEventListener('mousedown', () => {
+            flagMode = !flagMode;
+            flagBtn.style.background = flagMode ? 'rgba(255,100,100,0.3)' : 'rgba(255,255,255,0.1)';
+            flagBtn.textContent = flagMode ? '✅' : '🚩';
+        });
+    }
+    
+    // Тап по канвасу
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!gameRunning || gameOver) return;
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const scale = 400 / rect.width;
+        const x = Math.floor((touch.clientX - rect.left) * scale / CELL);
+        const y = Math.floor((touch.clientY - rect.top) * scale / CELL);
+        handleCellClick(x, y);
+    }, { passive: false });
+    
+    canvas.addEventListener('click', (e) => {
+        if (!gameRunning || gameOver) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = 400 / rect.width;
+        const x = Math.floor((e.clientX - rect.left) * scale / CELL);
+        const y = Math.floor((e.clientY - rect.top) * scale / CELL);
+        handleCellClick(x, y);
+    });
+}
+
+function handleCellClick(x, y) {
+    if (x<0 || x>=SIZE || y<0 || y>=SIZE) return;
+    if (revealed[y][x]) return;
+    
+    if (flagMode || (window.event && window.event.button === 2)) {
+        // Режим флага
+        flags[y][x] = !flags[y][x];
+        flagCount += flags[y][x] ? 1 : -1;
+        document.getElementById('flags').textContent = flagCount;
+        Sound.play('move');
+        render();
+        if (checkWin()) {
+            gameOver = true; gameRunning = false;
+            Sound.play('win');
+            revealAll();
+            render();
+            setTimeout(() => alert('🎉 Победа!'), 300);
+        }
+        return;
+    }
+    
+    if (flags[y][x]) return;
+    if (firstClick) {
+        placeMines(x, y);
+        firstClick = false;
+        timerInterval = setInterval(() => {
+            timer++;
+            document.getElementById('timer').textContent = timer;
+        }, 1000);
+    }
+    reveal(y, x);
+    render();
+    if (checkWin()) {
+        gameOver = true; gameRunning = false;
+        Sound.play('win');
+        revealAll();
+        render();
+        setTimeout(() => alert('🎉 Победа!'), 300);
+    }
+}
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 function initBoard() {
@@ -67,6 +196,7 @@ function initBoard() {
     document.getElementById('flags').textContent = '0';
     document.getElementById('timer').textContent = '0';
     timer = 0;
+    flagMode = false;
 }
 
 function placeMines(excludeX, excludeY) {
@@ -177,50 +307,6 @@ function render() {
     }
 }
 
-// ===== УПРАВЛЕНИЕ =====
-function handleClick(e) {
-    if (!gameRunning || gameOver) return;
-    const rect = canvas.getBoundingClientRect();
-    const scale = 400 / rect.width;
-    const x = Math.floor((e.clientX - rect.left) * scale / CELL);
-    const y = Math.floor((e.clientY - rect.top) * scale / CELL);
-    if (x<0 || x>=SIZE || y<0 || y>=SIZE) return;
-    
-    // ПКМ - флаг
-    if (e.button === 2) {
-        if (revealed[y][x]) return;
-        flags[y][x] = !flags[y][x];
-        flagCount += flags[y][x] ? 1 : -1;
-        document.getElementById('flags').textContent = flagCount;
-        Sound.play('move');
-        render();
-        if (checkWin()) { gameOver = true; gameRunning = false; Sound.play('win'); revealAll(); render(); }
-        return;
-    }
-    
-    if (flags[y][x]) return;
-    if (firstClick) {
-        placeMines(x, y);
-        firstClick = false;
-        timerInterval = setInterval(() => {
-            timer++;
-            document.getElementById('timer').textContent = timer;
-        }, 1000);
-    }
-    reveal(y, x);
-    render();
-    if (checkWin()) {
-        gameOver = true; gameRunning = false;
-        Sound.play('win');
-        revealAll();
-        render();
-        setTimeout(() => alert('🎉 Победа!'), 300);
-    }
-}
-
-canvas.addEventListener('click', handleClick);
-canvas.addEventListener('contextmenu', e => e.preventDefault());
-
 // ===== ОВЕРЛЕЙ =====
 function showOverlay(title, sub) {
     overlay.querySelector('h2').textContent = title;
@@ -232,8 +318,12 @@ function hideOverlay() { overlay.classList.remove('active'); }
 // ===== РЕСТАРТ =====
 function resetGame() {
     clearInterval(timerInterval);
+    if (animId) cancelAnimationFrame(animId);
     initBoard();
     gameOver = false; firstClick = true; gameRunning = true;
+    flagMode = false;
+    const flagBtn = document.querySelector('#touch-controls button[data-action="flag"]');
+    if (flagBtn) { flagBtn.textContent = '🚩'; flagBtn.style.background = 'rgba(255,255,255,0.1)'; }
     render();
     hideOverlay();
 }
@@ -242,6 +332,7 @@ startBtn.addEventListener('click', resetGame);
 
 // ===== СТАРТ =====
 initBoard();
+setupTouchControls();
 showOverlay('💣 Сапёр', 'Нажми "Начать"');
 </script>
 </body>
