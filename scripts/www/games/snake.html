@@ -2,22 +2,96 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐍 Змейка</title>
     <link rel="stylesheet" href="../style.css">
     <style>
-        .game-wrapper { max-width: 460px; }
-        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; }
+        .game-wrapper { max-width: 460px; margin: 0 auto; }
+        .canvas-wrapper { position: relative; border-radius: 12px; overflow: hidden; background: #0a0a1a; touch-action: none; }
+        canvas { display: block; width: 100%; height: auto; touch-action: none; }
         .game-overlay {
             position: absolute; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
             opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+            z-index: 5;
         }
         .game-overlay.active { opacity: 1; pointer-events: all; }
         .game-overlay h2 { font-size: 32px; color: #4ecdc4; }
         .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #4ecdc4; border: none; border-radius: 10px; color: #0a0a1a; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
         .game-overlay .btn:hover { transform: scale(1.05); }
+        
+        /* Стили для сенсорных кнопок */
+        #touch-controls {
+            position: absolute !important;
+            bottom: 15px !important;
+            left: 0 !important;
+            right: 0 !important;
+            display: none !important;
+            justify-content: space-between !important;
+            padding: 0 15px !important;
+            pointer-events: none !important;
+            z-index: 10 !important;
+        }
+        #touch-controls .btn-group {
+            display: flex !important;
+            gap: 10px !important;
+            pointer-events: all !important;
+            flex-wrap: wrap !important;
+        }
+        #touch-controls button {
+            width: 60px !important;
+            height: 60px !important;
+            border-radius: 50% !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(8px) !important;
+            color: white !important;
+            font-size: 24px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: none !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            transition: background 0.15s !important;
+            pointer-events: all !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+        }
+        #touch-controls button:active {
+            background: rgba(255,255,255,0.3) !important;
+            transform: scale(0.9) !important;
+        }
+        .dpad {
+            display: grid !important;
+            grid-template-columns: 60px 60px 60px !important;
+            grid-template-rows: 60px 60px 60px !important;
+            gap: 4px !important;
+            pointer-events: all !important;
+        }
+        .dpad button {
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 12px !important;
+            font-size: 22px !important;
+        }
+        .dpad .empty { visibility: hidden !important; }
+        
+        @media (max-width: 600px) {
+            #touch-controls { display: flex !important; }
+            #touch-controls button { width: 50px !important; height: 50px !important; font-size: 20px !important; }
+            .dpad { grid-template-columns: 50px 50px 50px !important; grid-template-rows: 50px 50px 50px !important; }
+        }
+        @media (max-width: 400px) {
+            #touch-controls button { width: 42px !important; height: 42px !important; font-size: 16px !important; }
+            .dpad { grid-template-columns: 42px 42px 42px !important; grid-template-rows: 42px 42px 42px !important; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls { display: flex !important; }
+        }
     </style>
 </head>
 <body>
@@ -27,12 +101,29 @@
         <div class="stats"><span>🏆 <b id="score">0</b></span><span>👑 <b id="high">0</b></span></div>
         <a href="../index.html" class="menu-btn">← Меню</a>
     </div>
-    <div style="position:relative;">
+    <div class="canvas-wrapper">
         <canvas id="game" width="400" height="400"></canvas>
         <div class="game-overlay" id="overlay">
             <h2>🐍 Змейка</h2>
             <p style="color:#888;margin:4px 0;">⬆⬇⬅➡</p>
             <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+        
+        <!-- Сенсорные кнопки -->
+        <div id="touch-controls">
+            <div class="btn-group">
+                <div class="dpad">
+                    <div class="empty"></div>
+                    <button data-action="up">⬆</button>
+                    <div class="empty"></div>
+                    <button data-action="left">⬅</button>
+                    <button data-action="down">⬇</button>
+                    <button data-action="right">➡</button>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button data-action="restart" style="width:50px !important;height:50px !important;font-size:20px !important;">🔄</button>
+            </div>
         </div>
     </div>
     <div class="game-controls">
@@ -60,9 +151,62 @@ let gameOver = false;
 let animId = null;
 let lastTime = 0;
 let moveTimer = 0;
-const MOVE_INTERVAL = 6500; // МАКСИМАЛЬНО МЕДЛЕННО (было 150)
+const MOVE_INTERVAL = 6500;
 
 document.getElementById('high').textContent = high;
+
+// ===== СЕНСОРНОЕ УПРАВЛЕНИЕ =====
+function setupTouchControls() {
+    const buttons = document.querySelectorAll('#touch-controls button[data-action]');
+    buttons.forEach(btn => {
+        const action = btn.dataset.action;
+        
+        const handlePress = (e) => {
+            e.preventDefault();
+            if (!gameRunning || gameOver) return;
+            handleAction(action);
+            btn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { btn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        };
+        
+        btn.addEventListener('touchstart', handlePress, { passive: false });
+        btn.addEventListener('mousedown', handlePress);
+    });
+    
+    // Свайпы на канвасе
+    let touchStartX = 0, touchStartY = 0;
+    canvas.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+    }, { passive: true });
+    
+    canvas.addEventListener('touchmove', (e) => {
+        if (!gameRunning || gameOver) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        
+        if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+                handleAction(dx > 0 ? 'right' : 'left');
+            } else {
+                handleAction(dy > 0 ? 'down' : 'up');
+            }
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        }
+    }, { passive: false });
+}
+
+function handleAction(action) {
+    if (action === 'restart') { resetGame(); return; }
+    if (action === 'up' && dir.y !== 1) nextDir = {x:0, y:-1};
+    if (action === 'down' && dir.y !== -1) nextDir = {x:0, y:1};
+    if (action === 'left' && dir.x !== 1) nextDir = {x:-1, y:0};
+    if (action === 'right' && dir.x !== -1) nextDir = {x:1, y:0};
+}
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 function init() {
@@ -166,7 +310,7 @@ function render() {
     });
 }
 
-// ===== УПРАВЛЕНИЕ =====
+// ===== КЛАВИАТУРА =====
 document.addEventListener('keydown', (e) => {
     const k = e.key;
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)) e.preventDefault();
@@ -212,6 +356,7 @@ startBtn.addEventListener('click', resetGame);
 
 // ===== СТАРТ =====
 init();
+setupTouchControls();
 showOverlay('🐍 Змейка', 'Нажми "Начать"');
 </script>
 </body>
