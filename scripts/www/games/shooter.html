@@ -2,24 +2,65 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🎯 Тир</title>
     <link rel="stylesheet" href="../style.css">
     <style>
-        .game-wrapper { max-width: 560px; }
-        canvas { display: block; width: 100%; height: auto; background: #0a0a1a; border-radius: 12px; cursor: crosshair; }
+        .game-wrapper { max-width: 560px; margin: 0 auto; }
+        .canvas-wrapper { position: relative; border-radius: 12px; overflow: hidden; background: #0a0a1a; touch-action: none; }
+        canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
         .game-overlay {
             position: absolute; inset: 0; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
             opacity: 0; pointer-events: none; transition: opacity 0.4s; border-radius: 12px;
+            z-index: 5;
         }
         .game-overlay.active { opacity: 1; pointer-events: all; }
         .game-overlay h2 { font-size: 32px; color: #ef5350; }
         .game-overlay .btn { margin-top: 16px; padding: 12px 36px; background: #ef5350; border: none; border-radius: 10px; color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; transition: transform 0.2s; }
         .game-overlay .btn:hover { transform: scale(1.05); }
-        .result-stats { display: flex; gap: 30px; margin-top: 10px; color: #888; font-size: 14px; }
-        .result-stats b { color: #ffd93d; font-size: 18px; }
+        
+        #touch-controls {
+            position: absolute !important;
+            bottom: 15px !important;
+            right: 15px !important;
+            display: none !important;
+            pointer-events: none !important;
+            z-index: 10 !important;
+        }
+        #touch-controls button {
+            width: 55px !important;
+            height: 55px !important;
+            border-radius: 50% !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(8px) !important;
+            color: white !important;
+            font-size: 22px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: none !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            transition: background 0.15s !important;
+            pointer-events: all !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+        }
+        #touch-controls button:active {
+            background: rgba(255,255,255,0.3) !important;
+            transform: scale(0.9) !important;
+        }
+        @media (max-width: 600px) {
+            #touch-controls button { width: 48px !important; height: 48px !important; font-size: 18px !important; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls { display: block !important; }
+        }
     </style>
 </head>
 <body>
@@ -29,16 +70,16 @@
         <div class="stats"><span>🏆 <b id="score">0</b></span><span>🎯 <b id="hits">0</b></span><span>⏱️ <b id="timer">30</b></span></div>
         <a href="../index.html" class="menu-btn">← Меню</a>
     </div>
-    <div style="position:relative;">
+    <div class="canvas-wrapper">
         <canvas id="game" width="500" height="400"></canvas>
         <div class="game-overlay" id="overlay">
             <h2>🎯 Тир</h2>
             <p style="color:#888;margin:4px 0;">Клик по мишеням</p>
-            <div class="result-stats" id="resultStats" style="display:none;">
-                <span>Счёт: <b id="resultScore">0</b></span>
-                <span>Попаданий: <b id="resultHits">0</b></span>
-            </div>
             <button class="btn" id="startBtn">▶ Начать</button>
+        </div>
+        
+        <div id="touch-controls">
+            <button data-action="restart">🔄</button>
         </div>
     </div>
     <div class="game-controls">
@@ -63,6 +104,75 @@ let mouseX = W/2, mouseY = H/2;
 let isTimeUp = false;
 
 document.getElementById('timer').textContent = timeLeft;
+
+// ===== СЕНСОРНОЕ УПРАВЛЕНИЕ =====
+function setupTouchControls() {
+    // Кнопка рестарта
+    const restartBtn = document.querySelector('#touch-controls button[data-action="restart"]');
+    if (restartBtn) {
+        restartBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            resetGame();
+            restartBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { restartBtn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        }, { passive: false });
+        restartBtn.addEventListener('mousedown', () => {
+            resetGame();
+            restartBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => { restartBtn.style.background = 'rgba(255,255,255,0.1)'; }, 150);
+        });
+    }
+    
+    // Тап = выстрел
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!gameRunning || gameOver) return;
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = W/rect.width, scaleY = H/rect.height;
+        const x = (touch.clientX - rect.left)*scaleX;
+        const y = (touch.clientY - rect.top)*scaleY;
+        shoot(x, y);
+    }, { passive: false });
+    
+    canvas.addEventListener('click', (e) => {
+        if (!gameRunning || gameOver) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = W/rect.width, scaleY = H/rect.height;
+        const x = (e.clientX - rect.left)*scaleX;
+        const y = (e.clientY - rect.top)*scaleY;
+        shoot(x, y);
+    });
+    
+    // Движение прицела
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = W/rect.width, scaleY = H/rect.height;
+        const touch = e.touches[0];
+        mouseX = (touch.clientX - rect.left)*scaleX;
+        mouseY = (touch.clientY - rect.top)*scaleY;
+    }, { passive: false });
+}
+
+function shoot(x, y) {
+    Sound.play('click');
+    addParticles(x, y, '#ffd93d', 8);
+    
+    for (let i=targets.length-1; i>=0; i--) {
+        const t = targets[i];
+        if (Math.sqrt((x-t.x)**2 + (y-t.y)**2) < t.r) {
+            score += 10 + Math.floor((t.maxLife-t.life)/20);
+            hits++;
+            document.getElementById('score').textContent = score;
+            document.getElementById('hits').textContent = hits;
+            addParticles(t.x, t.y, t.color, 25);
+            Sound.play('win');
+            targets.splice(i, 1);
+            return;
+        }
+    }
+}
 
 // ===== МИШЕНИ =====
 function addTarget() {
@@ -194,40 +304,6 @@ function update(dt) {
     }
 }
 
-// ===== ВЫСТРЕЛ =====
-function shoot(e) {
-    if (!gameRunning || gameOver) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = W/rect.width, scaleY = H/rect.height;
-    const x = (e.clientX - rect.left)*scaleX;
-    const y = (e.clientY - rect.top)*scaleY;
-    
-    Sound.play('click');
-    addParticles(x, y, '#ffd93d', 8);
-    
-    for (let i=targets.length-1; i>=0; i--) {
-        const t = targets[i];
-        if (Math.sqrt((x-t.x)**2 + (y-t.y)**2) < t.r) {
-            score += 10 + Math.floor((t.maxLife-t.life)/20);
-            hits++;
-            document.getElementById('score').textContent = score;
-            document.getElementById('hits').textContent = hits;
-            addParticles(t.x, t.y, t.color, 25);
-            Sound.play('win');
-            targets.splice(i, 1);
-            return;
-        }
-    }
-}
-
-canvas.addEventListener('click', shoot);
-canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = W/rect.width, scaleY = H/rect.height;
-    mouseX = (e.clientX - rect.left)*scaleX;
-    mouseY = (e.clientY - rect.top)*scaleY;
-});
-
 // ===== ТАЙМЕР =====
 function startTimer() {
     timeLeft = 30;
@@ -239,30 +315,17 @@ function startTimer() {
         if (timeLeft <= 0) {
             clearInterval(timerInterval);
             timerInterval = null;
-            // Останавливаем игру
             gameOver = true;
             gameRunning = false;
             isTimeUp = true;
             Sound.play('lose');
-            // Показываем результат
-            showResultOverlay();
+            render();
         }
     }, 1000);
 }
 
-// ===== РЕЗУЛЬТАТ =====
-function showResultOverlay() {
-    document.getElementById('resultStats').style.display = 'flex';
-    document.getElementById('resultScore').textContent = score;
-    document.getElementById('resultHits').textContent = hits;
-    overlay.querySelector('h2').textContent = '⏰ Время вышло!';
-    overlay.querySelector('p').textContent = 'Попробуй ещё раз';
-    overlay.classList.add('active');
-}
-
 // ===== ОВЕРЛЕЙ =====
 function showOverlay(title, sub) {
-    document.getElementById('resultStats').style.display = 'none';
     overlay.querySelector('h2').textContent = title;
     overlay.querySelector('p').textContent = sub || '';
     overlay.classList.add('active');
@@ -271,10 +334,7 @@ function hideOverlay() { overlay.classList.remove('active'); }
 
 // ===== ЦИКЛ =====
 function loop(timestamp) {
-    if (!gameRunning) { 
-        animId = requestAnimationFrame(loop); 
-        return; 
-    }
+    if (!gameRunning) { animId = requestAnimationFrame(loop); return; }
     if (!lastTime) lastTime = timestamp;
     const dt = Math.min(timestamp - lastTime, 33) / 16.67;
     lastTime = timestamp;
@@ -286,25 +346,15 @@ function loop(timestamp) {
 
 // ===== РЕСТАРТ =====
 function resetGame() {
-    // Останавливаем всё
     if (animId) cancelAnimationFrame(animId);
-    if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-    }
-    
-    targets = [];
-    particles = [];
-    score = 0;
-    hits = 0;
-    gameOver = false;
-    isTimeUp = false;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    targets = []; particles = [];
+    score = 0; hits = 0;
+    gameOver = false; isTimeUp = false;
     gameRunning = true;
     lastTime = 0;
-    
     document.getElementById('score').textContent = '0';
     document.getElementById('hits').textContent = '0';
-    
     hideOverlay();
     startTimer();
     animId = requestAnimationFrame(loop);
@@ -313,6 +363,7 @@ function resetGame() {
 startBtn.addEventListener('click', resetGame);
 
 // ===== СТАРТ =====
+setupTouchControls();
 showOverlay('🎯 Тир', 'Нажми "Начать"');
 </script>
 </body>
